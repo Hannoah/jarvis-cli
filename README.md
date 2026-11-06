@@ -17,7 +17,7 @@ tools       dir   -           2026-11-06 10:26:02
 
 $ jarvis read_file notes.txt 1 20      # 위치 인자
 $ jarvis git_status                    # 구조화된 Git 상태
-$ jarvis shell                         # 대화형 모드 (Tab 완성·히스토리)
+$ jarvis                               # 대화형 모드 (입력창·/ 메뉴·도구 폼)
 ```
 
 ## 특징
@@ -25,6 +25,7 @@ $ jarvis shell                         # 대화형 모드 (Tab 완성·히스토
 - **도구 39개** — 파일 읽기/쓰기/수정, 검색, PowerShell 실행, 백그라운드 작업, Git, 코드 심볼, 웹 검색/페이지 읽기, Word·Excel·PowerPoint·PDF 읽기, 위키 메모리, 예약 작업, kubectl·Azure·Power Platform CLI.
 - **안전 장치 내장** — 허용 폴더 밖 접근 차단, 터미널 명령 허용 목록, 수정 전 자동 백업(`undo_last_edit`), 모든 호출을 `audit.log`에 기록, 비밀 파일 읽기 차단.
 - **사용하기 편한 출력** — 파일 내용은 그대로, 목록은 표, 명령 실행은 stdout/stderr 분리, 색상 지원. 파이프로 넘기면 원문 그대로 나와 스크립트에 쓰기 좋습니다.
+- **대화형 입력창** — `jarvis`만 입력하면 `/` 메뉴와 단계별 도구 폼이 있는 터미널 UI가 열립니다.
 - **셸 친화적** — 위치 인자, 오타 제안(`Did you mean`), 의미 있는 종료 코드, PowerShell/bash 자동 완성.
 - **서버 없음** — 포트·터널·로그인 없이 터미널에서 바로 실행됩니다.
 
@@ -39,7 +40,7 @@ npm install -g https://github.com/Hannoah/jarvis-cli/archive/refs/heads/main.tar
 jarvis version
 ```
 
-빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 같은 명령을 다시 실행하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.1.0.tar.gz`처럼 태그를 지정하세요.
+빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 같은 명령을 다시 실행하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.2.0.tar.gz`처럼 태그를 지정하세요.
 
 > `npm install -g github:Hannoah/jarvis-cli` 형태는 쓰지 마세요. npm 11에서 전역 설치 시 임시 폴더로 링크가 걸려 실행이 깨집니다.
 
@@ -73,7 +74,7 @@ jarvis completion bash >> ~/.bashrc
 jarvis <tool> [args]        도구 실행
 jarvis list [filter]        도구 목록 (이름·설명으로 필터)
 jarvis help <tool>          파라미터와 사용법 (= jarvis <tool> --help)
-jarvis shell                대화형 세션
+jarvis                      대화형 모드 (= jarvis shell)
 jarvis completion <powershell|bash>
 ```
 
@@ -103,7 +104,24 @@ jarvis run_terminal "Get-Date -Format o"
 
 ### 대화형 모드
 
-`jarvis shell`은 도구 이름과 `--파라미터`를 Tab으로 완성하고, 방향키로 히스토리를 불러옵니다. `exit`로 종료합니다.
+터미널에서 `jarvis`만 입력하면 입력창이 열립니다.
+
+```
+╭──────────────────────────────────────────────────────╮
+│ ◆ Jarvis 0.1.0                                       │
+│   folder  ~\Workpp                                 │
+│   39 tools · 4 allowed folders · terminal: allowlist │
+╰──────────────────────────────────────────────────────╯
+── ~\Workpp ───────────────────────────────────────────
+❯ _
+```
+
+- **도구 바로 실행:** `read_file notes.txt`, `git_status`, `help read_file` — 한 줄 모드와 같은 문법입니다.
+- **`/` 명령 메뉴:** `/`만 입력하면 메뉴가 열립니다. ↑↓로 이동, 글자를 입력하면 필터링, Enter로 선택, Esc로 취소합니다.
+- **`/tools`:** 카테고리 → 도구를 고르면 파라미터를 하나씩 물어보고, 선택 항목은 메뉴에서 추가한 뒤 `▶ Run`으로 실행합니다. 실행 전에 같은 동작의 한 줄 명령(`→ read_file --path ...`)을 보여줍니다.
+- **슬래시 명령:** `/tools` `/list [필터]` `/cd [폴더]`(허용 폴더 안에서만) `/env` `/help` `/clear` `/exit`
+- **편의:** Tab으로 도구 이름·`--옵션`·`/명령` 완성, ↑↓로 이전 입력, Ctrl+C를 두 번 누르면 종료.
+- 파이프로 명령을 넘기면(`"git_status" | jarvis shell`) 메뉴 없이 한 줄씩 실행합니다.
 
 ## 도구 목록
 
@@ -161,7 +179,7 @@ npm test           # 인자 파싱·렌더링 단위 테스트
 npm run typecheck
 ```
 
-구조: `src/cli.ts`(진입점·명령) · `src/cliutil.ts`(인자 파싱·렌더링, 테스트 대상) · `src/tools/*`(도구) · `src/{core,files,security,system}`(설정·샌드박스·정책·백업). CLI는 도구를 MCP 서버 형태로 같은 프로세스 안에서 호출하므로, MCP 서버 구현을 그대로 재사용합니다.
+구조: `src/cli.ts`(진입점·명령) · `src/cliutil.ts`(인자 파싱·렌더링, 테스트 대상) · `src/tui.ts`(메뉴·입력 프롬프트) · `src/tools/*`(도구) · `src/{core,files,security,system}`(설정·샌드박스·정책·백업). CLI는 도구를 MCP 서버 형태로 같은 프로세스 안에서 호출하므로, MCP 서버 구현을 그대로 재사용합니다.
 
 ## 라이선스
 

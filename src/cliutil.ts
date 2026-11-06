@@ -153,3 +153,46 @@ export function toolHelp(t: { name: string; description?: string; inputSchema: u
     ...(rows.length ? ["", table(rows, 90)] : []),
   ].join("\n");
 }
+
+export const propType = (p?: Prop): string => typeOf(p).join("|") + (p?.enum ? ` (${p.enum.join("|")})` : "");
+
+// ponytail: static grouping for the menu; tools not listed here (e.g. plugins) land under "Other"
+const CATEGORIES: Record<string, string[]> = {
+  Environment: ["get_pc_env", "get_system_status"],
+  Files: ["read_file", "write_file", "edit_file", "list_files", "search_in_files", "read_document", "list_code_symbols"],
+  Backups: ["undo_last_edit", "list_file_backups", "restore_file_backup"],
+  Terminal: ["run_terminal", "start_background_job", "read_job_output", "stop_job", "list_background_jobs"],
+  Git: ["git_status", "git_diff", "git_log", "git_commit"],
+  Web: ["search_web", "fetch_web_page"],
+  Wiki: ["wiki_index", "wiki_search", "wiki_read", "wiki_append", "wiki_create"],
+  Desktop: ["open_in_default_app", "manage_clipboard", "send_notification"],
+  Scheduler: ["schedule_task", "list_scheduled_tasks", "delete_scheduled_task"],
+  "Cloud CLIs": ["run_kubectl", "run_azure_cli", "run_pac_cli", "run_viya_cli", "deploy_viya_status_page"],
+};
+
+export function categorize<T extends { name: string }>(tools: T[]): [string, T[]][] {
+  const seen = new Set<string>();
+  const out: [string, T[]][] = [];
+  for (const [cat, names] of Object.entries(CATEGORIES)) {
+    const ts = tools.filter((t) => names.includes(t.name));
+    ts.forEach((t) => seen.add(t.name));
+    if (ts.length) out.push([cat, ts]);
+  }
+  const rest = tools.filter((t) => !seen.has(t.name));
+  if (rest.length) out.push(["Other", rest]);
+  return out;
+}
+
+/** The equivalent one-shot command, shown after a guided form so people learn the flags. Display only (quoting is approximate). */
+export function cmdline(name: string, args: Record<string, unknown>): string {
+  const q = (v: unknown) => {
+    const s = typeof v === "string" ? v : JSON.stringify(v);
+    return /^[\w./:\~@%+=,-]+$/.test(s) ? s : `"${s.replace(/"/g, '\\"')}"`;
+  };
+  return [name, ...Object.entries(args).map(([k, v]) => (v === true ? `--${k}` : `--${k} ${q(v)}`))].join(" ");
+}
+
+export function shortPath(p: string, home: string, max: number): string {
+  const s = p.startsWith(home) ? "~" + p.slice(home.length) : p;
+  return s.length > max ? "…" + s.slice(-(max - 1)) : s;
+}
