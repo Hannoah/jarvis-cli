@@ -94,3 +94,41 @@ test("a dashboard that rejects our token gives an explanation instead of a bare 
     srv.close();
   }
 });
+
+test("tunnel: status explains an error and restart goes stop -> start -> waits until online", async () => {
+  const http = await import("node:http");
+  let tunnelState = "error";
+  const calls: string[] = [];
+  const srv = http.createServer((req, res) => {
+    calls.push(`${req.method} ${req.url}`);
+    if (req.headers["x-jarvis-token"] !== "tok") { res.statusCode = 401; return void res.end("no"); }
+    if (req.url === "/api/tunnel/stop") tunnelState = "off";
+    if (req.url === "/api/tunnel/start") setTimeout(() => (tunnelState = "online"), 300);
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({
+      server: { state: "running", pid: 1, started_at: Date.now() },
+      tunnel: { state: tunnelState, message: tunnelState === "error" ? "relay token expired" : "", url: "https://x.devtunnels.ms/mcp", id: "x" },
+      urls: { local: "", public: "" },
+    }));
+  });
+  await new Promise<void>((r) => srv.listen(0, "127.0.0.1", () => r()));
+  const { cfg } = setup();
+  fs.appendFileSync(cfg.envFile, `JARVIS_DASHBOARD_PORT=${(srv.address() as { port: number }).port}\n`);
+  fs.writeFileSync(path.join(cfg.dataDir, ".dashboard_token"), "tok");
+  const out: string[] = [];
+  const orig = console.log;
+  console.log = (m?: unknown) => void out.push(String(m));
+  try {
+    assert.equal(await adminCommand("tunnel", [], cfg), 0);
+    assert.match(out.join("\n"), /relay token expired/);
+    assert.match(out.join("\n"), /jarvis tunnel restart/);
+    out.length = 0;
+    calls.length = 0;
+    assert.equal(await adminCommand("tunnel", ["restart"], cfg), 0);
+    assert.ok(calls.indexOf("POST /api/tunnel/stop") >= 0 && calls.indexOf("POST /api/tunnel/start") > calls.indexOf("POST /api/tunnel/stop"), calls.join(", "));
+    assert.match(out.join("\n"), /tunnel online/);
+  } finally {
+    console.log = orig;
+    srv.close();
+  }
+});

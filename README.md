@@ -40,7 +40,7 @@ npm install -g https://github.com/Hannoah/jarvis-cli/archive/refs/heads/main.tar
 jarvis version
 ```
 
-빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 같은 명령을 다시 실행하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.5.1.tar.gz`처럼 태그를 지정하세요.
+빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 같은 명령을 다시 실행하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.6.0.tar.gz`처럼 태그를 지정하세요.
 
 > `npm install -g github:Hannoah/jarvis-cli` 형태는 쓰지 마세요. npm 11에서 전역 설치 시 임시 폴더로 링크가 걸려 실행이 깨집니다.
 
@@ -177,6 +177,8 @@ jarvis start                # 포그라운드로 실행: MCP 서버 + Dev Tunnel
 jarvis status               # 감시 프로세스, MCP 서버(PID·가동 시간), 터널 상태
 jarvis restart              # MCP 서버만 재시작 (저장한 설정을 반영할 때)
 jarvis stop                 # MCP 서버·터널·대시보드를 모두 종료
+jarvis tunnel               # Dev Tunnel 상태 (오류 메시지와 해결 방법 포함)
+jarvis tunnel restart       # 터널만 다시 연결 (start | stop | restart | status)
 jarvis start --no-tunnel    # 터널 없이 (로컬에서만 접속)
 jarvis start --no-open      # 대시보드를 브라우저로 열지 않음
 jarvis serve                # MCP 서버만 127.0.0.1에 실행 (감시·터널 없음)
@@ -185,7 +187,7 @@ jarvis install              # 로그인할 때 자동 시작 (작업 스케줄�
 jarvis uninstall
 ```
 
-`jarvis` 입력창 안에서는 `/start`, `/stop`, `/restart`, `/status`로 같은 일을 합니다. `stop`·`restart`·`status`는 실행 중인 감시 프로세스의 대시보드 API를 통해 동작하며, 대시보드 토큰은 설정 폴더의 `.dashboard_token`을 사용합니다.
+`jarvis` 입력창 안에서는 `/start`, `/stop`, `/restart`, `/status`, `/tunnel`로 같은 일을 합니다. `stop`·`restart`·`status`는 실행 중인 감시 프로세스의 대시보드 API를 통해 동작하며, 대시보드 토큰은 설정 폴더의 `.dashboard_token`을 사용합니다.
 
 ### MCP 연결 정보
 
@@ -234,6 +236,7 @@ jarvis allowlist check "git status"  # 실제 정책으로 검사만 하기 (실
   1. 그 Jarvis를 먼저 끄고 `jarvis start -d`.
   2. `JARVIS_HOME`을 그 Jarvis의 데이터 폴더로 지정해서 jarvis-cli로 그대로 제어: `jarvis status`, `jarvis mcp`, `jarvis restart`. 단, `jarvis stop`은 jarvis-ts 같은 구버전 감시 프로세스에는 종료 기능이 없어 MCP 서버만 멈추고 창(Ctrl+C)은 직접 닫아야 합니다.
 - 예전에 `jarvis start`가 포트 충돌로 실패하면 설정 폴더에 `.dashboard_token`이 남지만 해롭지 않습니다. 위 안내가 나올 뿐입니다.
+- **터널이 `error`로 남아 외부에서 접속이 안 될 때**: 네트워크가 끊긴 뒤 `403 Proxy Token Expired`가 반복되면 감시 프로세스가 "5회 넘게 재시작"으로 터널을 포기하고 `error` 상태로 둡니다. `jarvis status`가 이 상태를 보여주면 `jarvis tunnel restart`로 다시 연결하세요. 자세한 로그는 설정 폴더의 `tunnel.log`와 `supervisor.log`에 있습니다.
 - 외부 접속은 [Dev Tunnel](https://learn.microsoft.com/azure/developer/dev-tunnels/) CLI(`devtunnel`)를 씁니다. 없으면 Windows에서는 winget으로 설치를 시도합니다.
 - 서버 설정·API 키·OAuth 토큰·로그는 설정 폴더(`~/.jarvis`)에 저장됩니다. **jarvis-ts를 이미 쓰고 있다면** 키와 터널 주소가 새로 만들어지지 않도록 같은 폴더를 가리키세요.
   ```powershell
@@ -303,6 +306,8 @@ npm run typecheck
 ```
 
 구조: `src/cli.ts`(진입점·명령) · `src/supervisor/`·`src/server/http.ts`·`src/main.ts`(MCP 서버·터널·대시보드) · `src/cliutil.ts`(인자 파싱·렌더링, 테스트 대상) · `src/tui.ts`(메뉴·입력 프롬프트) · `src/tools/*`(도구) · `src/{core,files,security,system}`(설정·샌드박스·정책·백업). CLI는 도구를 MCP 서버 형태로 같은 프로세스 안에서 호출하므로, MCP 서버 구현을 그대로 재사용합니다.
+
+작업 이력, 결정 기록, 배포 절차, 겪은 함정은 [`LLMWiki/`](LLMWiki/index.md)에 정리되어 있습니다. 작업을 시작하기 전에 `LLMWiki/index.md`를 먼저 읽고, 끝나면 `work-history.md`에 한 항목을 추가하세요.
 
 ## 라이선스
 

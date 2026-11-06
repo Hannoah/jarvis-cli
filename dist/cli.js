@@ -41,6 +41,7 @@ ${c.dim("MCP server")}  (for Copilot Studio, Claude, Cursor, ...)
   jarvis ${c.cyan("install")} | ${c.cyan("uninstall")}     start automatically at login (Task Scheduler / LaunchAgent / systemd)
   jarvis ${c.cyan("start")} -d | --background   same as start, but detached: the terminal stays free
   jarvis ${c.cyan("stop")} | ${c.cyan("restart")} | ${c.cyan("status")}   stop everything · restart the MCP server · show what is running
+  jarvis ${c.cyan("tunnel")} [status|start|stop|restart]   Dev Tunnel control (after "giving up", restart it by hand)
   jarvis ${c.cyan("mcp")} [key|config <client>|copy <what>|rotate --yes]   connection info: URLs, API key, client configs
 
 ${c.dim("Access control")}  (saved to the settings file; run "jarvis restart" to apply to a running server)
@@ -480,6 +481,7 @@ async function shell(client, tools, ctx) {
         "/mcp": { hint: "MCP connection info: URLs, API key, client configs", run: adminSlash("mcp", mcpMenu) },
         "/start": { hint: "Start the MCP server, tunnel and dashboard in the background", run: async () => void (await startBackground(ctx.cfg, ENTRY, [])) },
         "/stop": { hint: "Stop the MCP server, tunnel and dashboard", run: async () => void (await adminCommand("stop", [], ctx.cfg)) },
+        "/tunnel": { hint: "Dev Tunnel: status, start, stop, restart", run: async (a) => void (await adminCommand("tunnel", tokenize(a), ctx.cfg)) },
         "/restart": { hint: "Restart the MCP server (applies saved settings)", run: async () => void (await adminCommand("restart", [], ctx.cfg)) },
         "/tools": { hint: "Browse tools by category and run one with a guided form", run: browse },
         "/list": { hint: "List tools, optionally filtered: /list git", run: async (a) => list(tools, a ? [a] : []) },
@@ -619,7 +621,7 @@ async function shell(client, tools, ctx) {
     }
 }
 // ---------- MCP server (ported from jarvis-ts: server + Dev Tunnel + dashboard) ----------
-const SERVER_CMDS = ["start", "serve", "open", "url", "install", "uninstall", "status", "stop", "restart", "dirs", "permissions", "allowlist", "mcp"];
+const SERVER_CMDS = ["start", "serve", "open", "url", "install", "uninstall", "status", "stop", "restart", "tunnel", "dirs", "permissions", "allowlist", "mcp"];
 /** Returns an exit code, or undefined when the process should keep running (server / supervisor). */
 async function serverCommand(cmd, argv) {
     const { dataDir } = prepareDataDir();
@@ -638,6 +640,7 @@ async function serverCommand(cmd, argv) {
         case "status":
         case "stop":
         case "restart":
+        case "tunnel":
         case "dirs":
         case "permissions":
         case "allowlist":

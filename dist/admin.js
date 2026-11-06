@@ -95,7 +95,53 @@ export async function status(cfg) {
     const s = st.server;
     row("supervisor", `${c.green("running")}  dashboard :${dashPort(cfg)}`);
     row("MCP server", `${s.state === "running" ? c.green(s.state) : c.yellow(s.state)}${s.pid ? c.dim(`  pid ${s.pid}`) : ""}${s.state === "running" && s.started_at ? c.dim(`  up ${dur(Date.now() - s.started_at)}`) : ""}`);
-    row("tunnel", `${st.tunnel.state === "running" ? c.green(st.tunnel.state) : c.dim(st.tunnel.state)}${st.tunnel.url ? `  ${st.tunnel.url}` : ""}`);
+    tunnelRows(st);
+    return 0;
+}
+// Tunnel states (supervisor/tunnel.ts): off | preparing | connecting | online | offline | error
+const tunnelState = (s) => (s === "online" ? c.green(s) : s === "error" ? c.red(s) : s === "off" ? c.dim(s) : c.yellow(s));
+function tunnelRows(st) {
+    const t = st.tunnel;
+    row("tunnel", `${tunnelState(t.state)}${t.url ? `  ${t.url}` : ""}`);
+    if (t.state === "error" || t.state === "offline") {
+        if (t.message)
+            row("", c.dim(t.message));
+        row("", c.yellow("external access is down. Try: jarvis tunnel restart"));
+    }
+}
+/** Dev Tunnel control: after repeated failures the supervisor gives up ("more than 5 restarts") and waits for a manual restart. */
+export async function tunnel(cfg, args) {
+    const [sub = "status"] = split(args).pos;
+    const st = await control(cfg, "GET", "/api/state");
+    if (!st)
+        return fail("Not running. Start it with: jarvis start -d");
+    if (sub === "status")
+        return tunnelRows(st), 0;
+    if (sub === "stop") {
+        await control(cfg, "POST", "/api/tunnel/stop");
+        console.log(c.green("✔ tunnel stopped"));
+        return 0;
+    }
+    if (sub !== "start" && sub !== "restart")
+        return fail("Usage: jarvis tunnel [status|start|stop|restart]");
+    if (sub === "restart")
+        await control(cfg, "POST", "/api/tunnel/stop");
+    await control(cfg, "POST", "/api/tunnel/start");
+    const end = await withSpinner("Connecting the tunnel", (async () => {
+        await sleep(2000); // the start request returns before the state leaves its old value
+        for (let i = 0; i < 60; i++) {
+            const t = (await control(cfg, "GET", "/api/state"))?.tunnel;
+            if (t && (t.state === "online" || t.state === "error"))
+                return t;
+            await sleep(1000);
+        }
+        return null;
+    })());
+    if (!end)
+        return fail("The tunnel is still connecting. Check: jarvis tunnel");
+    if (end.state === "error")
+        return fail(`Tunnel error: ${end.message || "unknown"}. Details: ${path.join(cfg.dataDir, "tunnel.log")}`);
+    console.log(c.green("✔ tunnel online") + (end.url ? `  ${end.url}` : ""));
     return 0;
 }
 /** Start the supervisor (server + tunnel + dashboard) detached, so the terminal stays free. */
@@ -342,7 +388,7 @@ export async function mcp(cfg, args) {
     const key = readApiKey(cfg);
     if (sub === "info") {
         row("MCP server", st ? (st.server.state === "running" ? c.green("running") : c.yellow(st.server.state)) : (await portOpen(cfg.port)) ? c.green("running") : c.dim("stopped"));
-        row("HTTPS URL", pub || c.dim("none (no tunnel yet; start with the tunnel enabled)"));
+        row("HTTPS URL", pub ? pub + (st && st.tunnel.state !== "online" ? c.yellow(`  (tunnel ${st.tunnel.state}: jarvis tunnel restart)`) : "") : c.dim("none (no tunnel yet; start with the tunnel enabled)"));
         row("local URL", local);
         row("API key", `${maskKey(key)}  ${c.dim("jarvis mcp key | jarvis mcp copy key")}`);
         row("auth", `header ${c.cyan("X-API-Key: <key>")} ${c.dim("or")} ${c.cyan("Authorization: Bearer <key>")}`);
@@ -396,6 +442,7 @@ export async function adminCommand(name, args, cfg) {
             case "status": return await status(cfg);
             case "stop": return await stop(cfg);
             case "restart": return await restart(cfg);
+            case "tunnel": return await tunnel(cfg, args);
             case "dirs": return await dirs(cfg, args);
             case "permissions": return await permissions(cfg, args);
             case "allowlist": return await allowlist(cfg, args);
