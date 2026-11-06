@@ -109,3 +109,9 @@
 | 요청 | 한 일 | 함정/결정 |
 |---|---|---|
 | "README.md에 이 MCP Server가 왜 좋은지도 적어줘 그리고 사실 가장큰 강점은 MS 코파일럿 같은 클라이언트에 MCP만 연결해 놓으면 원격으로 내 PC를 마음껏 핸들링할 수 있다는 점임" | ① `## 왜 Jarvis MCP Server인가?` 섹션 추가: MS Copilot(Copilot Studio) 연동을 통한 원격 PC 핸들링(킬러 기능), 39개 로컬 도구, 샌드박스/롤백 안전장치, 1 PC 1 Identity 영구 신원, 2-in-1 모드 기술. ② `## MCP 서버로 쓰기`에 스마트폰/외부 기기에서의 원격 제어 활용 시나리오(파일/문서 요약, 빌드/테스트/Git, 백그라운드 작업 등) TIP 블록 추가. | README 수정 후 41개 테스트 전체 통과 확인, GitHub `main`에 커밋 및 푸시 완료 |
+
+## 문서 갱신 — "README.md 영문화 및 스크린샷 3종(TUI, 원격 아키텍처, 웹 대시보드) 추가"
+
+| 요청 | 한 일 | 함정/결정 |
+|---|---|---|
+| "이거 근데 README.md 영어로 써 스크린샷도 포함해줘 그리고" | ① README.md 전체를 완성도 높은 영문으로 전면 개편(소개, 킬러 기능, 설치, TUI 모드, MCP 서버, 접근 제어, CLI 확인, 감사 로그, 39개 도구 표, 설정 가이드). ② `assets/` 디렉터리에 3가지 고해상도 시각 스크린샷 생성 및 첨부: `terminal-demo.png`(TUI 프롬프트 및 도구 실행 카드), `copilot-remote-workflow.png`(MS Copilot 연동 원격 PC 자동화 아키텍처 다이어그램), `dashboard-preview.png`(포트 8766 웹 대시보드 미리보기). | Edge headless(`--headless=new`)로 픽셀 단위 렌더링. `main` 브랜치에 커밋 및 푸시 완료 |
