@@ -19,21 +19,21 @@ Jarvis(jarvis-ts)의 도구 39개를 **터미널 명령**과 **로컬 MCP 서버
 4. [testing-and-pitfalls](testing-and-pitfalls.md) — 검증 방법(실제 터미널 포함)과 겪은 함정
 5. [release-runbook](release-runbook.md) — 배포 절차 (커밋 → push → 릴리스 → 설치 검증)
 
-## 현재 상태 (2026-11-06)
-- 최신 릴리스 **v0.10.0**(첫 호출 때 업데이트 질문 → 승낙하면 이어서 실행) · v0.9.0(`jarvis cli`) · v0.8.1(v0.8.0: PC 고유값, 감사 로그·에이전트 보기, 에이전트 친화 CLI / v0.8.1: 화면을 지워도 헤더 유지) ·  기능은 v0.6.0 — 도구 직접 실행 CLI, 인터랙티브 입력창(상태 줄·자동 제안·메뉴 패널·도구 카드·테마), MCP 서버 제어(start -d / stop / restart / status / tunnel), MCP 연결 정보, 승인 폴더·권한·allowlist 관리.
-- 테스트 41개 통과(`npm test`). 도구 39개.
+## 현재 상태 (2026-11-07)
+- 최신 릴리스 **v0.11.0**(Dev Tunnel 3분 쿨다운 자가 치유(Auto-Healing), 웹 대시보드 에이전트 모니터링 탭 추가, 모바일 원격 다운로드 도구 `share_file_url` 추가, 대시보드 한글 깨짐 58곳 완전 해소).
+- 테스트 44개 통과(`npm test`). 도구 40개.
 - 사용자의 PC에서는 **jarvis-ts가 같은 포트(8765/8766)로 이미 실행 중**이다. 서버 관련 시험은 반드시 임시 설정 폴더와 임시 포트로 한다 → [testing-and-pitfalls](testing-and-pitfalls.md).
 - 설치는 **tarball URL**로만 안내한다(`npm install -g github:...`는 npm 11에서 깨짐).
 
 ## 남은 것 (열린 항목)
-00. **이 PC의 값이 `~/.jarvis` 기준으로 채택됐다.** `jarvis-ts/data`의 키·터널 ID는 다르다. 예전 값으로 되돌리려면 `jarvis identity import <jarvis-ts/data> --yes`(사용자 결정). 웹 대시보드에는 에이전트 화면이 아직 없다.
+00. **이 PC의 값이 `~/.jarvis` 기준으로 채택됐다.** `jarvis-ts/data`의 키·터널 ID는 다르다. 예전 값으로 되돌리려면 `jarvis identity import <jarvis-ts/data> --yes`(사용자 결정). (웹 대시보드 에이전트 화면은 v0.11.0에서 추가 완료)
 0. **터널 경유 레이트리밋(v0.6.1)을 실제 터널로 확인하지 못했다.** 헤더가 붙는다는 가정이다. 터널을 켠 상태에서 외부에서 301회 이상 호출해 429가 나는지 볼 것.
 1. **Dev Tunnel을 켠 외부 접속 end-to-end 미검증.** 터널 코드는 jarvis-ts 것 그대로이고 `jarvis tunnel`은 가짜 대시보드로만 시험했다.
-2. **터널이 스스로 복구하지 못하는 문제(관측됨, 미해결).** 사용자 환경에서 2026-11-05 21:21경 `403 Proxy Token Expired`가 반복되고 감시 프로세스가 "more than 5 restarts in 10 min"으로 포기한 뒤 `error` 상태로 남았다. 지금은 `jarvis tunnel restart`로 수동 복구. 개선 아이디어: 포기 후 몇 분 뒤 재시도, 또는 토큰 만료를 감지해 호스트를 다시 띄우기 (코드는 `src/supervisor/tunnel.ts`).
+2. (해결됨 - v0.11.0) **터널 자가 치유 도입.** `Service` 및 `Tunnel`에 `crashLoopCooldownMs`(3분)를 추가하여 10분 5회 크래시 시 3분 쿨다운 후 토큰 유효성 검사 및 자동 복구 수행.
 3. `jarvis install`(로그인 시 자동 시작) 미검증 — 시스템 설정을 바꾸므로 시험을 미뤘다.
 4. `jarvis mcp copy`(클립보드) 미검증 — 사용자의 클립보드를 덮어쓸까 봐 실행하지 않았다.
 5. 폭이 넓은 일반 터미널(Windows Terminal)에서 로고 그라데이션·박스 모양을 눈으로 확인하지 못했다(시험 하네스가 색을 변환).
-6. **원본 `jarvis-ts`의 `supervisor/dashboard.ts`에 깨진 한글 문자열 58곳**(포트 충돌 진단 문구). 복사본에도 그대로 있다. 원본에서 고친 뒤 다시 복사할 것.
+6. (해결됨 - v0.11.0) **`supervisor/dashboard.ts` 깨진 한글 58곳 완전 정리.** 유효한 UTF-8 문자열로 치환 완료.
 7. 배포에 쓰는 GitHub 토큰의 권한이 필요 이상으로 넓다. `repo` 권한만 가진 토큰으로 바꾸는 것을 권한다(바꾸는 위치는 [release-runbook](release-runbook.md)).
 
 ## 코드 위치 (코드만 봐서는 안 보이는 것만)

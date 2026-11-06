@@ -115,3 +115,9 @@
 | 요청 | 한 일 | 함정/결정 |
 |---|---|---|
 | "이거 근데 README.md 영어로 써 스크린샷도 포함해줘 그리고" | ① README.md 전체를 완성도 높은 영문으로 전면 개편(소개, 킬러 기능, 설치, TUI 모드, MCP 서버, 접근 제어, CLI 확인, 감사 로그, 39개 도구 표, 설정 가이드). ② `assets/` 디렉터리에 3가지 고해상도 시각 스크린샷 생성 및 첨부: `terminal-demo.png`(TUI 프롬프트 및 도구 실행 카드), `copilot-remote-workflow.png`(MS Copilot 연동 원격 PC 자동화 아키텍처 다이어그램), `dashboard-preview.png`(포트 8766 웹 대시보드 미리보기). | Edge headless(`--headless=new`)로 픽셀 단위 렌더링. `main` 브랜치에 커밋 및 푸시 완료 |
+
+## v0.11.0 — 터널 자가 치유(Auto-Healing), 웹 대시보드 에이전트 탭, 모바일 다운로드(`share_file_url`)
+
+| 요청 | 한 일 | 함정/결정 |
+|---|---|---|
+| "운영 중인 시스템이니까 날림으로 개발하면 안 돼 진짜 잘 작동하고 안정적으로 작동하게 개발해야 돼" | ① **Dev Tunnel 자가 치유(Auto-Healing)**: `Service`와 `Tunnel`에 `crashLoopCooldownMs`(기본 3분) 옵션을 도입. 10분 5회 크래시 시 영구 중단되지 않고 3분 쿨다운 후 토큰 유효성 검사 및 자동 복구 재시도. ② **대시보드 인코딩 정리**: `src/supervisor/dashboard.ts`의 깨진 한글 58곳을 정상 UTF-8 표준 문구로 치환. ③ **웹 대시보드 에이전트 탭**: `GET /api/agents` 엔드포인트 및 `tab-agents` UI 화면을 추가하여 AI 클라이언트 목록/호출 수/최근 도구 시각화. ④ **모바일 원격 다운로드 도구 (`share_file_url`)**: 스마트폰 Copilot에서 PC의 승인 폴더 내 파일을 다운로드받을 수 있는 임시 HTTPS 링크 발급 및 `GET /download/:token` 핸들러 구현. ⑤ **시스템 상태 보강**: `get_system_status`에 CPU 코어 수/모델 및 OS 가동 시간(Uptime) 추가. | ① **다운로드 엔드포인트 위치**: 대시보드(8766)는 루프백 전용이고 터널은 MCP(8765)만 포워딩하므로 모바일에서 접속하려면 MCP 포트에서 서빙해야 함. ② **공개 다운로드 분기 순서**: `/download/:token`은 URL 내 보안 토큰을 쓰므로 헤더 인증(`auth.handle`)보다 먼저 라우팅되어야 함. ③ 단위/통합 테스트 3건 추가(`test/service.test.ts`, `test/dashboard.test.ts`, `test/share.test.ts`), 44개 테스트 전체 통과 확인. |

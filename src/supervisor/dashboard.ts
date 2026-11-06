@@ -18,6 +18,7 @@ import { applySettings, readApiKey, regenerateApiKey, SettingsError, viewSetting
 import { listTools, type ToolInfo } from "./tools.js";
 import { Tunnel } from "./tunnel.js";
 import { renderUi } from "./ui.js";
+import { readEntries, summarizeAgents } from "../auditView.js";
 
 export interface DashboardDeps {
   projectDir: string;
@@ -153,11 +154,11 @@ export function diagnoseServer(o: { projectDir: string; port: number; status: Pi
   }
   if (!fresh || !/EADDRINUSE/.test(tailFile(errLog, 40))) return [];
   const who = (o.ownerOf ?? portOwner)(o.port);
-  const by = who ? `${who.name || "?�른 ?�로그램"}(PID ${who.pid})` : "?�른 ?�로그램";
+  const by = who ? `${who.name || "다른 프로그램"}(PID ${who.pid})` : "다른 프로그램";
   return [
     {
-      summary: `${o.port} ?�트�?${by}??가) ?�용 중입?�다.`,
-      fix: `�??�로그램??종료?????�다???�작?�을 ?�르거나, data/.env??PC_MCP_PORT�??�른 번호�?바꾸?�요. ?�이??버전 Jarvis가 켜져 ?�으�?같�? ?�트�??�니??`,
+      summary: `${o.port} 포트를 ${by}이(가) 사용 중입니다.`,
+      fix: `해당 프로그램을 종료한 뒤 다시 시작하거나, 설정의 포트 번호를 변경하세요. 이전 버전의 Jarvis가 켜져 있으면 같은 포트를 사용합니다.`,
     },
   ];
 }
@@ -299,7 +300,7 @@ export function createDashboard(d: DashboardDeps): Server {
       if (!(header && eq(header, d.token)) && !validSession(cookieOf(req))) {
         if (method === "GET" && url.pathname === "/") {
           // a person opened the bare address: say what to do instead of a bare 401
-          return send(res, 401, "<!doctype html><meta charset=utf-8><title>Jarvis</title><body style=\"font:16px/1.7 system-ui,'Malgun Gothic',sans-serif;max-width:520px;margin:15vh auto;padding:0 20px\"><h2>??브라?��????�직 로그?�되지 ?�았?�니??/h2><p>보안???�해 처음 ??번�? Jarvis가 ?�어주는 주소�??�어?�???�니?? �??�에????주소�??�어???�니??</p><p><b>Jarvis.cmd</b>(맥�? Jarvis.command)�??�블?�릭?�세??</p>", "text/html; charset=utf-8");
+          return send(res, 401, "<!doctype html><meta charset=utf-8><title>Jarvis</title><body style=\"font:16px/1.7 system-ui,'Malgun Gothic',sans-serif;max-width:520px;margin:15vh auto;padding:0 20px\"><h2>이 브라우저에서는 아직 로그인되지 않았습니다.</h2><p>보안을 위해 처음 한 번은 Jarvis가 열어주는 주소(?token=...)로 접속해야 합니다. 그 후에는 이 주소만 열어도 됩니다.</p><p>터미널에서 <b>jarvis status</b>를 실행해 대시보드 주소를 확인하세요.</p></body>", "text/html; charset=utf-8");
         }
         return send(res, 401, "Open the dashboard URL printed by Jarvis (it contains ?token=...).", "text/plain");
       }
@@ -318,6 +319,11 @@ export function createDashboard(d: DashboardDeps): Server {
         if (url.pathname === "/api/tools") {
           const c = cfgNow();
           return json(res, 200, { tools: await tools(c.port, readApiKey(c)) });
+        }
+        if (url.pathname === "/api/agents") {
+          const since = Number(url.searchParams.get("since")) || 0;
+          const rows = summarizeAgents(readEntries(cfgNow()), since);
+          return json(res, 200, { agents: rows });
         }
         if (url.pathname === "/api/logs") {
           const kind = url.searchParams.get("kind") ?? "audit";

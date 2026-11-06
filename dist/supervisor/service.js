@@ -168,6 +168,19 @@ export class Service extends EventEmitter {
         this.stamps.push(now);
         this.total++;
         if (this.stamps.length > this.o.maxRestarts) {
+            if (this.o.crashLoopCooldownMs && this.o.crashLoopCooldownMs > 0) {
+                const coolSec = Math.round(this.o.crashLoopCooldownMs / 1000);
+                this.log(`giving up temporarily: more than ${this.o.maxRestarts} restarts in ${Math.round(this.o.windowMs / 60000)} min. Auto-recovering in ${coolSec}s`);
+                this.set("failed", `crash loop (last exit: code ${code}, signal ${signal}); auto-recovering in ${coolSec}s`);
+                const gen = this.generation;
+                await sleep(this.o.crashLoopCooldownMs);
+                if (this.desired && gen === this.generation) {
+                    this.log(`cooldown elapsed, attempting auto-recovery`);
+                    this.stamps = [];
+                    await this.launch();
+                }
+                return;
+            }
             this.desired = false;
             this.log(`giving up: more than ${this.o.maxRestarts} restarts in ${Math.round(this.o.windowMs / 60000)} min`);
             this.set("failed", `crash loop (last exit: code ${code}, signal ${signal})`);

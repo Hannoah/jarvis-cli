@@ -1,7 +1,7 @@
 {
   "name": "jarvis-cli",
-  "version": "0.10.0",
-  "description": "Jarvis: 39 sandboxed file/terminal/git/web/wiki tools for your PC, as a command-line program",
+  "version": "0.11.0",
+  "description": "Jarvis: 40 sandboxed file/terminal/git/web/wiki tools for your PC, as a command-line program",
   "type": "module",
   "bin": {
     "jarvis": "dist/cli.js"

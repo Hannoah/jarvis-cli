@@ -6,6 +6,7 @@ import { isResolvedPathAllowed, protectionOfResolved, realResolve } from "../cor
 import { globMatcher } from "../files/glob.js";
 import { bufferEncoding, decodeText, splitLines } from "../files/textio.js";
 import { json, mutating, READ_ONLY, resolveSafePath, SandboxViolationError, text } from "./common.js";
+import { createShareToken } from "../core/share.js";
 const SKIP_DIRS = new Set([".git", ".venv", "venv", "node_modules", "__pycache__", ".idea", ".vscode", "dist", "build", "target"]);
 export function registerFileTools(mcp, ctx) {
     const { cfg, audit } = ctx;
@@ -301,6 +302,44 @@ export function registerFileTools(mcp, ctx) {
         }
         audit("search_in_files", "ALLOW", `query='${query}' root=${root} matches=${matches.length}`);
         return json({ root, query, count: matches.length, matches, hit_limit: matches.length >= limit });
+    });
+    mcp.registerTool("share_file_url", {
+        description: "Generate a secure temporary HTTPS download URL for a file in approved folders. Perfect for remote/mobile clients like Copilot to download documents, spreadsheets, or images directly to a phone or tablet.",
+        inputSchema: {
+            path: z.string().describe("File path to share (must be within allowed_directories)."),
+            expires_in_minutes: z.number().int().min(1).max(1440).default(10).describe("Expiry duration in minutes (default 10, max 1440)."),
+            one_time: z.boolean().default(false).describe("If true, the download link expires immediately after the first successful download."),
+        },
+        annotations: READ_ONLY,
+    }, async ({ path: p, expires_in_minutes, one_time }) => {
+        if (!cfg.enableRead) {
+            audit("share_file_url", "BLOCKED_POLICY", "File read disabled by user policy");
+            return json({ error: "File read operations are disabled by policy (PC_MCP_ENABLE_READ=false)." });
+        }
+        const r = safe(p, "share_file_url");
+        if ("error" in r)
+            return json({ error: r.error });
+        try {
+            const entry = createShareToken(r.path, cfg, {
+                ttlMs: expires_in_minutes * 60_000,
+                oneTime: one_time,
+            });
+            const baseUrl = cfg.publicUrl ? cfg.publicUrl.replace(/\/mcp\/?$/i, "") : `http://127.0.0.1:${cfg.port}`;
+            const downloadUrl = `${baseUrl}/download/${entry.token}`;
+            audit("share_file_url", "ALLOW", `path="${r.path}" token=${entry.token.slice(0, 8)}... expires=${expires_in_minutes}m`);
+            return json({
+                success: true,
+                download_url: downloadUrl,
+                file_name: entry.fileName,
+                size_bytes: entry.fileSize,
+                expires_in_minutes,
+                one_time,
+                message: "Download link ready. Open this URL in any mobile browser to download the file.",
+            });
+        }
+        catch (e) {
+            return json({ success: false, error: e.message });
+        }
     });
 }
 /**

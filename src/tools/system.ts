@@ -136,10 +136,18 @@ export function registerSystemTools(mcp: McpServer, ctx: Ctx): void {
       }
       const total = os.totalmem();
       const free = os.freemem();
+      const cpus = os.cpus();
+      const uptimeSec = os.uptime();
+      const uptimeStr = `${Math.floor(uptimeSec / 3600)}h ${Math.floor((uptimeSec % 3600) / 60)}m`;
       audit("get_system_status", "ALLOW", "Fetched system status");
       return json({
         os: `${os.type()} ${os.release()} ${os.arch()}`,
         hostname: os.hostname(),
+        uptime: uptimeStr,
+        cpu: {
+          cores: cpus.length,
+          model: cpus[0]?.model || "unknown",
+        },
         disk_storage: disks,
         memory_ram: { total_gb: gb(total, 2), available_gb: gb(free, 2), used_percent: Math.round(((total - free) / total) * 100) },
       });

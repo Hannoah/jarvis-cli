@@ -133,6 +133,14 @@ textarea{min-height:128px;resize:vertical;line-height:1.75}input[type=text]:focu
 .dir-t{flex:1;min-width:0}.dir-t b{display:block;font-size:14px}.dir-t span{display:block;color:var(--muted);font-size:12px;font-family:Consolas,"SF Mono",Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dir-empty{padding:26px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:12px}
 .dir-add{margin-top:16px}
+.ag-card{display:flex;flex-direction:column;gap:12px;padding:20px;border:1px solid var(--line);border-radius:14px;background:var(--soft);margin-bottom:14px}
+.ag-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ag-name{font-size:15px;font-weight:700}
+.ag-ver{font-size:12px;color:var(--muted);background:var(--idle-bg);padding:2px 8px;border-radius:6px}
+.ag-meta{margin-left:auto;display:flex;align-items:center;gap:16px;font-size:12.5px;color:var(--muted)}
+.ag-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.ag-tools .chip{background:var(--panel)}
+.ag-empty{padding:40px 16px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:14px}
 .dlg.pk{width:min(620px,94vw)}.dlg.pk h3{margin-bottom:14px}
 .pk-places{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
 .place{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:999px;padding:3px 14px;font:inherit;font-size:12.5px;cursor:pointer}.place:hover{border-color:var(--brand);color:var(--brand)}
@@ -160,6 +168,7 @@ textarea{min-height:128px;resize:vertical;line-height:1.75}input[type=text]:focu
  <nav role="tablist" aria-label="대시보드 화면">
   <button data-tab="status" class="on" role="tab" id="nav-status" aria-selected="true" aria-controls="tab-status"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span class="t">대시보드</span></button>
   <button data-tab="tools" role="tab" id="nav-tools" aria-selected="false" aria-controls="tab-tools"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg><span class="t">도구</span></button>
+  <button data-tab="agents" role="tab" id="nav-agents" aria-selected="false" aria-controls="tab-agents"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg><span class="t">에이전트</span></button>
   <button data-tab="settings" role="tab" id="nav-settings" aria-selected="false" aria-controls="tab-settings"><svg viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg><span class="t">설정</span><i class="dirty hide" id="nav-dirty" title="저장하지 않은 변경"></i></button>
   <button data-tab="logs" role="tab" id="nav-logs" aria-selected="false" aria-controls="tab-logs"><svg viewBox="0 0 24 24"><path d="M6 3h12v18H6z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg><span class="t">로그</span></button>
  </nav>
@@ -222,7 +231,11 @@ textarea{min-height:128px;resize:vertical;line-height:1.75}input[type=text]:focu
   <div class="card"><div id="tl-list"></div></div>
  </section>
 
- <section id="tab-settings" class="hide" role="tabpanel" aria-labelledby="nav-settings">
+ <section id="tab-agents" class="hide" role="tabpanel" aria-labelledby="nav-agents">
+  <div class="toolbar"><input type="text" id="ag-q" placeholder="에이전트 이름 또는 도구 검색…" autocomplete="off" aria-label="에이전트 검색">
+   <span class="tl-count" id="ag-count"></span><button class="btn sm" id="ag-refresh">새로고침</button></div>
+  <div id="ag-list"></div>
+ </section>
   <div class="card"><h2>허용 폴더 (샌드박스)</h2><p class="sub">AI는 아래 폴더 안에서만 파일을 읽고 쓸 수 있습니다. 하위 폴더도 포함됩니다.</p>
    <div id="dir-list"></div>
    <div class="dir-add"><button class="btn" id="dir-add">+ 폴더 추가</button></div></div>
@@ -262,7 +275,7 @@ textarea{min-height:128px;resize:vertical;line-height:1.75}input[type=text]:focu
 <div class="gate hide" id="gate" role="alert"><div class="card"><h2>다시 로그인이 필요합니다</h2><p class="sub">이 브라우저의 접속이 만료되었거나 Jarvis가 재시작되었습니다.<br><b>Jarvis.cmd</b>(맥은 Jarvis.command)를 다시 실행하면 대시보드가 자동으로 열립니다.</p></div></div>
 <script>
 (function(){
-  var TABS=["status","tools","settings","logs"], TITLES={status:["대시보드","엔진과 터널의 상태를 확인하고 제어합니다."],tools:["도구","AI 클라이언트가 지금 사용할 수 있는 도구입니다."],settings:["설정","AI가 접근할 수 있는 범위와 권한을 정합니다."],logs:["로그","도구 호출, 서버, 터널의 기록을 확인합니다."]};
+  var TABS=["status","tools","agents","settings","logs"], TITLES={status:["대시보드","엔진과 터널의 상태를 확인하고 제어합니다."],tools:["도구","AI 클라이언트가 지금 사용할 수 있는 도구입니다."],agents:["에이전트","Jarvis MCP 서버와 CLI를 호출한 AI 클라이언트의 활동 기록입니다."],settings:["설정","AI가 접근할 수 있는 범위와 권한을 정합니다."],logs:["로그","도구 호출, 서버, 터널의 기록을 확인합니다."]};
   var $=function(i){return document.getElementById(i);}, last=null, shownKey="", keyTimer=0, fails=0, tab="status", logKind="audit", logRaw="", baseline="", settingsSig="", heroSig="", permSig="", connTab="basic", actSig="", dirs=[], pk=null;
   var L={running:"실행 중",stopped:"중지됨",starting:"시작 중",restarting:"재시작 중",failed:"실패",online:"연결됨",offline:"끊김",connecting:"연결 중",preparing:"준비 중",error:"오류",off:"꺼짐"};
   var K={running:"ok",online:"ok",starting:"warn",restarting:"warn",connecting:"warn",preparing:"warn",failed:"bad",error:"bad",offline:"bad",stopped:"",off:""};
@@ -528,6 +541,45 @@ textarea{min-height:128px;resize:vertical;line-height:1.75}input[type=text]:focu
   document.querySelectorAll("#tl-seg button").forEach(function(b){b.onclick=function(){tlFilter=b.getAttribute("data-f");document.querySelectorAll("#tl-seg button").forEach(function(x){var on=x===b;x.className=on?"on":"";x.setAttribute("aria-pressed",on?"true":"false");});paintTools();};});
   $("tl-q").oninput=paintTools;$("tl-refresh").onclick=function(){loadTools();};
 
+  /* agents: clients that connect to MCP or invoke the CLI */
+  var agents=null, agentsErr="";
+  function paintAgents(){
+    var box=$("ag-list"), q=$("ag-q").value.trim().toLowerCase();box.textContent="";
+    function note(msg,err){var e=document.createElement("div");e.className="ag-empty"+(err?" err":"");e.textContent=msg;box.appendChild(e);}
+    if(!agents){$("ag-count").textContent="";note(agentsErr||"불러오는 중…",!!agentsErr);return;}
+    var list=agents.filter(function(a){return !q||(a.agent+" "+(a.version||"")+" "+(a.via||[]).join(" ")+" "+Object.keys(a.tools||{}).join(" ")).toLowerCase().indexOf(q)>=0;});
+    $("ag-count").textContent=list.length+" / "+agents.length+"개 에이전트";
+    if(!list.length){note(agents.length?"조건에 맞는 에이전트가 없습니다":"호출 기록이 있는 에이전트가 없습니다");return;}
+    var frag=document.createDocumentFragment();
+    list.forEach(function(a){
+      var card=document.createElement("div");card.className="ag-card";
+      var head=document.createElement("div");head.className="ag-head";
+      var name=document.createElement("span");name.className="ag-name";name.textContent=a.agent;
+      head.appendChild(name);
+      if(a.version){var ver=document.createElement("span");ver.className="ag-ver mono";ver.textContent="v"+a.version;head.appendChild(ver);}
+      (a.via||[]).forEach(function(v){var chip=document.createElement("span");chip.className="chip"+(v==="tunnel"?" risk":"");chip.textContent=v;head.appendChild(chip);});
+      var meta=document.createElement("div");meta.className="ag-meta";
+      var calls=document.createElement("span");calls.textContent="호출 "+a.calls+"회";meta.appendChild(calls);
+      if(a.last){var lastSeen=document.createElement("span");lastSeen.textContent="마지막 활동: "+ago(new Date(a.last).getTime());meta.appendChild(lastSeen);}
+      head.appendChild(meta);
+      card.appendChild(head);
+      var toolKeys=Object.keys(a.tools||{});
+      if(toolKeys.length){
+        var tbox=document.createElement("div");tbox.className="ag-tools";
+        var tlbl=document.createElement("span");tlbl.style.color="var(--muted)";tlbl.style.fontSize="12.5px";tlbl.textContent="사용 도구:";tbox.appendChild(tlbl);
+        toolKeys.sort(function(x,y){return (a.tools[y]||0)-(a.tools[x]||0);}).forEach(function(k){
+          var tc=document.createElement("span");tc.className="chip mono";tc.textContent=k+" ("+a.tools[k]+")";tbox.appendChild(tc);
+        });
+        card.appendChild(tbox);
+      }
+      frag.appendChild(card);
+    });
+    box.appendChild(frag);
+  }
+  function loadAgents(){var b=$("ag-refresh");b.classList.add("busy");
+    return api("/api/agents").then(function(r){agents=r.agents;agentsErr="";},function(e){agents=null;agentsErr=e.message;}).then(function(){b.classList.remove("busy");paintAgents();});}
+  $("ag-q").oninput=paintAgents;$("ag-refresh").onclick=function(){loadAgents();};
+
   /* tabs (kept in the URL hash so a reload stays where you were) */
   function go(name){
     if(TABS.indexOf(name)<0)name="status";tab=name;history.replaceState(null,"",location.pathname+"#"+name);
@@ -537,6 +589,7 @@ textarea{min-height:128px;resize:vertical;line-height:1.75}input[type=text]:focu
     if(name==="logs"){syncSeg();loadLogs().then(function(){$("log-text").scrollTop=$("log-text").scrollHeight;});}
     if(name==="status")loadActivity();
     if(name==="tools")loadTools();
+    if(name==="agents")loadAgents();
   }
   document.querySelectorAll(".side nav button").forEach(function(b){b.onclick=function(){go(b.getAttribute("data-tab"));};});
   document.querySelector(".side nav").addEventListener("keydown",function(e){

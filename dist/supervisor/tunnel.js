@@ -140,6 +140,7 @@ export class Tunnel {
                 readyTimeoutMs: 60_000,
                 healthIntervalMs: 15_000,
                 healthFailures: 2,
+                crashLoopCooldownMs: this.o.crashLoopCooldownMs ?? 3 * 60_000,
             });
             this.svc.on("change", (s) => {
                 if (s.state === "running")

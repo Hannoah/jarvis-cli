@@ -1,8 +1,10 @@
+import fs from "node:fs";
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createAuth, readBody } from "../security/auth.js";
 import { isLoopbackIp, normalizeIp, RateLimiter } from "../security/ratelimit.js";
 import type { Ctx } from "../core/context.js";
+import { getSharedFile, recordDownload } from "../core/share.js";
 import { agentDetails, rpcsOf } from "./agents.js";
 import { createMcpServer } from "./mcp.js";
 
@@ -39,8 +41,33 @@ export function createHttpServer(ctx: Ctx, apiKey: string, limiter: RateLimiter 
           return;
         }
       }
+      const parsedUrl = new URL(req.url ?? "/", "http://x");
+      if (parsedUrl.pathname.startsWith("/download/")) {
+        const token = parsedUrl.pathname.slice("/download/".length);
+        const entry = getSharedFile(token);
+        if (!entry) {
+          res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+          res.end("Download link expired or invalid.");
+          return;
+        }
+        if (!fs.existsSync(entry.filePath)) {
+          res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+          res.end("File no longer exists on disk.");
+          return;
+        }
+        recordDownload(token);
+        ctx.audit("http", "DOWNLOAD", `file="${entry.fileName}" size=${entry.fileSize} ip="${normalizeIp(peer)}"`);
+        res.writeHead(200, {
+          "content-type": "application/octet-stream",
+          "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(entry.fileName)}`,
+          "content-length": String(entry.fileSize),
+        });
+        fs.createReadStream(entry.filePath).pipe(res);
+        return;
+      }
+
       if (await auth.handle(req, res)) return;
-      if (new URL(req.url ?? "/", "http://x").pathname !== "/mcp") {
+      if (parsedUrl.pathname !== "/mcp") {
         res.writeHead(404).end();
         return;
       }

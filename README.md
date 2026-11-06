@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)
 
-**39 sandboxed PC tools (files, terminal, Git, web, wiki, cloud CLIs) for your PC — accessible locally from your terminal or remotely through any AI client via MCP.**
+**40 sandboxed PC tools (files, terminal, Git, web, wiki, cloud CLIs) for your PC — accessible locally from your terminal or remotely through any AI client via MCP.**
 
 ![Jarvis Terminal UI](assets/terminal-demo.png)
 
@@ -39,7 +39,7 @@ Jarvis's single biggest advantage is that **by connecting it as an MCP (Model Co
     - *"Find the latest Q4 financial report spreadsheet in my Documents folder and summarize top 3 takeaways."*
     - *"Run the integration test suite on my work PC, fix any broken imports, and show me the git diff."*
     - *"Start downloading the dataset in the background and notify me when it finishes."*
-- **39 Production-Ready Local Tools**:
+- **40 Production-Ready Local Tools**:
   - Beyond basic file operations, Jarvis includes PowerShell terminal execution, background process management, Office document text extraction (Word `.docx`, Excel `.xlsx`, PowerPoint `.pptx`, PDF), Git version control, AST code symbols extraction, long-term wiki memory, and enterprise cloud CLIs (`kubectl`, `az`, `pac`, `sas-viya`).
 - **Ironclad Safety & Sandboxing**:
   - AI can never wander freely across your operating system.
@@ -58,7 +58,7 @@ Jarvis's single biggest advantage is that **by connecting it as an MCP (Model Co
 
 ## Features
 
-- **39 Sandboxed Tools** — File read/write/edit/search, PowerShell terminal execution, background job management, Git, code symbols, web search/fetch, Word/Excel/PowerPoint/PDF document extraction, wiki memory, task scheduler, kubectl, Azure CLI, Power Platform CLI.
+- **40 Sandboxed Tools** — File read/write/edit/search/share, PowerShell terminal execution, background job management, Git, code symbols, web search/fetch, Word/Excel/PowerPoint/PDF document extraction, wiki memory, task scheduler, kubectl, Azure CLI, Power Platform CLI.
 - **Built-in Safety Guardrails** — Approved folder sandbox, terminal command allowlist, automatic edit backups (`undo_last_edit`), full audit logging (`audit.log`), secret file masking.
 - **Clean, Script-Friendly Output** — Unadorned content for files, formatted tables for listings, separated stdout/stderr for commands, ANSI colors. Automatically outputs raw text when piped.
 - **Interactive TUI Prompt** — Type `jarvis` to launch a full terminal UI featuring a `/` slash-command menu, step-by-step parameter forms (`/tools`), live autocomplete suggestions, and gradient themes.
@@ -81,7 +81,7 @@ Upon installation, `jarvis about` prints the installed version and a quick intro
 
 * To update: `jarvis update` (or re-run the install command).
 * To uninstall: `npm uninstall -g jarvis-cli`.
-* To install a specific version: replace `main.tar.gz` with a release tag, e.g. `refs/tags/v0.10.0.tar.gz`.
+* To install a specific version: replace `main.tar.gz` with a release tag, e.g. `refs/tags/v0.11.0.tar.gz`.
 
 > Do not use `npm install -g github:Hannoah/jarvis-cli`. On npm 11, global installations from GitHub shorthand link to a temporary clone folder, breaking execution.
 
@@ -169,8 +169,8 @@ Run `jarvis` without arguments to launch the interactive prompt:
 ██╗██║██╔══██║██╔══██╗╚██╗ ██╔╝██║╚════██║
 ╚█████╔╝██║  ██║██║  ██║ ╚████╔╝ ██║███████║
  ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚═╝╚══════╝
-  v0.10.0  ·  ~\Work\app
-  39 tools · 4 folders · allowlist · MCP server ● running
+  v0.11.0  ·  ~\Work\app
+  40 tools · 4 folders · allowlist · MCP server ● running
   tip: /tools walks you through any tool's parameters, step by step.
 
 ~\Work\app  ·  MCP server ● running  ·  allowlist
@@ -191,7 +191,7 @@ Run `jarvis` without arguments to launch the interactive prompt:
 | `/clear` | Clear screen (preserves Jarvis banner & status header; Ctrl+L also works) |
 | `/status` | Versions, approved directories, security policy, MCP server state |
 | `/doctor` | System diagnostic (Node, PowerShell, Git, devtunnel, kubectl, etc.) |
-| `/tools` | Guided parameter input wizard for all 39 tools |
+| `/tools` | Guided parameter input wizard for all 40 tools |
 | `/dirs` | View, add, or remove approved sandbox directories |
 | `/permissions`| Toggle Read, Write, and Terminal permissions or switch policy mode |
 | `/allowlist` | View, add, remove, or check terminal allowlist commands |
@@ -329,12 +329,12 @@ jarvis run_terminal --json '{"command":"git status"}' --format json
 
 ---
 
-## Complete Tool Catalog (39 Tools)
+## Complete Tool Catalog (40 Tools)
 
 | Category | Tools | Description |
 |---|---|---|
 | **Environment** | `get_pc_env`, `get_system_status` | PC resource metrics, allowed directories, security policy status |
-| **Files** | `read_file`, `write_file`, `edit_file`, `list_files`, `search_in_files`, `read_document` | Full file operations & Office/PDF document text extraction |
+| **Files** | `read_file`, `write_file`, `edit_file`, `list_files`, `search_in_files`, `share_file_url`, `read_document` | Full file operations, temporary mobile download links, & Office/PDF extraction |
 | **Backup** | `undo_last_edit`, `list_file_backups`, `restore_file_backup` | Automatic snapshot backups & instant rollback |
 | **Terminal** | `run_terminal`, `start_background_job`, `read_job_output`, `stop_job`, `list_background_jobs` | Sandboxed PowerShell execution & long-running jobs |
 | **Git** | `git_status`, `git_diff`, `git_log`, `git_commit` | Structured repository inspection and commit management |
@@ -393,7 +393,7 @@ npm run typecheck        # Strict TypeScript type check
   - `src/supervisor/`, `src/server/http.ts`, `src/main.ts` — MCP server daemon, Dev Tunnel, web dashboard
   - `src/tui.ts` — Interactive terminal prompt and menus
   - `src/cliutil.ts` — CLI argument parsing, tokenizing, table/card rendering
-  - `src/tools/` — 39 tool implementations
+  - `src/tools/` — 40 tool implementations
   - `src/{core,files,security,system}` — Configuration, sandbox validation, policies, backups
   - `LLMWiki/` — Persistent architectural decisions, work history, and release runbook
 

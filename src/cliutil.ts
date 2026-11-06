@@ -225,7 +225,7 @@ export const propType = (p?: Prop): string => typeOf(p).join("|") + (p?.enum ? `
 // ponytail: static grouping for the menu; tools not listed here (e.g. plugins) land under "Other"
 const CATEGORIES: Record<string, string[]> = {
   Environment: ["get_pc_env", "get_system_status"],
-  Files: ["read_file", "write_file", "edit_file", "list_files", "search_in_files", "read_document", "list_code_symbols"],
+  Files: ["read_file", "write_file", "edit_file", "list_files", "search_in_files", "share_file_url", "read_document", "list_code_symbols"],
   Backups: ["undo_last_edit", "list_file_backups", "restore_file_backup"],
   Terminal: ["run_terminal", "start_background_job", "read_job_output", "stop_job", "list_background_jobs"],
   Git: ["git_status", "git_diff", "git_log", "git_commit"],

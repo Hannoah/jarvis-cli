@@ -23,6 +23,8 @@ export interface TunnelOptions {
   cli?: string[];
   /** Allow `winget install` of the CLI on Windows. */
   autoInstall?: boolean;
+  /** Cooldown in ms before attempting auto-recovery after hitting a crash loop. Defaults to 3 minutes. */
+  crashLoopCooldownMs?: number;
 }
 
 interface Run {
@@ -160,6 +162,7 @@ export class Tunnel {
         readyTimeoutMs: 60_000,
         healthIntervalMs: 15_000,
         healthFailures: 2,
+        crashLoopCooldownMs: this.o.crashLoopCooldownMs ?? 3 * 60_000,
       });
       this.svc.on("change", (s: ServiceStatus) => {
         if (s.state === "running") this.set("online", "");
