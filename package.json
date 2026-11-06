@@ -1,0 +1,53 @@
+{
+  "name": "jarvis-cli",
+  "version": "0.1.0",
+  "description": "Jarvis: 39 sandboxed file/terminal/git/web/wiki tools for your PC, as a command-line program",
+  "type": "module",
+  "bin": {
+    "jarvis": "dist/cli.js"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "prepare": "tsc"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "unpdf": "^2.1.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "author": "Hannoah",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hannoah/jarvis-cli.git"
+  },
+  "homepage": "https://github.com/Hannoah/jarvis-cli#readme",
+  "bugs": {
+    "url": "https://github.com/Hannoah/jarvis-cli/issues"
+  },
+  "keywords": [
+    "cli",
+    "mcp",
+    "automation",
+    "sandbox",
+    "powershell",
+    "git",
+    "wiki"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
+}

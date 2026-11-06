@@ -1,0 +1,15 @@
+# installed / built
+node_modules/
+dist/
+.e2e-dist/
+
+# everything Jarvis writes at runtime: settings, API key, logs, backups
+data/
+
+# the same files from older versions, which kept them next to the code
+.env
+.oauth_tokens.json
+.dashboard_token
+.backups/
+.scheduled/
+*.log
