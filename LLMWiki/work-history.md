@@ -97,3 +97,9 @@
 |---|---|---|
 | "Jarvis에 CLI가 있는지 확인하고 없으면 설치하는 것도" (GlobalProtect VPN 질문에서 이어짐) | `src/clis.ts`: `jarvis cli [check\|install <name…> --yes] [--json]`, `/cli`, `/doctor`가 같은 목록을 씀. 목록은 enterprise 도구의 `catalog`를 재사용하고 git, devtunnel, pangpcli(GlobalProtect)를 추가. winget/brew 한 줄 명령만 자동 설치, 나머지(sas-viya, pangpcli)는 이유와 방법만 안내 | **`winget`은 앱 실행 별칭이라 PATH 검색(`which`)으로 못 찾고 실행은 된다** → 존재 확인을 `winget --version` 실행으로 했다(처음 구현은 항상 "winget 없음"으로 거부했을 것). 설치 경로 자체는 이 PC에 빠진 설치 가능 CLI가 없어서 **실제 설치는 시험하지 못했다**(확인 경로와 거부 경로, `installPlan` 단위 테스트만). MCP 도구로는 열지 않음: 원격 에이전트가 UAC 확인창을 띄우면 아무도 못 본다 |
 | GlobalProtect VPN | 이 PC의 GlobalProtect 6.3.3(MSI)에는 `pangpcli.exe`가 **없다**. Jarvis로 연결하려면 CLI가 필요하고, 문서상 `-start -portal`, `-disconnect`, `-status`가 있다는 검색 결과만 확인(문서 페이지 본문은 못 읽음) | 연결 방식이 `user-logon`(로그인 시 자동). VPN을 켜면 Dev Tunnel이 끊길 수 있음. 상태만 알려 주는 읽기 전용 도구는 가능, 켜는 기능은 CLI 확인 후 |
+
+## v0.10.0 — 첫 호출 때 업데이트 질문, 승낙하면 이어서 실행
+
+| 요청 | 한 일 | 함정/결정 |
+|---|---|---|
+| "버전업이 있었던 경우에는 처음 jarvis 호출하면 물어보고, 한다고 하면 업그레이드 진행" | 질문 시점을 입력창에서 **터미널의 모든 첫 명령**으로 넓힘(`main()`에서 `shouldAskAboutUpdate`). `Update now`면 설치 후 **같은 인자로 새 버전을 다시 실행**(`spawnSync(process.execPath, [ENTRY, …args])`, 무한 반복을 막으려 자식에는 `JARVIS_NO_UPDATE_CHECK=1`). 릴리스 확인 주기를 24시간에서 1시간으로(스누즈 "Later"는 그대로 하루) | 파이프·스크립트·에이전트(`--format json`/`--raw`)·`serve`·`update`·`version`·`help`·`completion`은 절대 묻지 않는다(자동 시작 작업이나 에이전트가 멈추면 안 된다). **질문→설치→이어서 실행의 전 과정은 실제 TTY로 돌려 보지 못했다**(판단 함수 단위 테스트와, 설치 단계는 `jarvis update`로 임시 폴더에서 확인한 것뿐) |

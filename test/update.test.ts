@@ -56,3 +56,14 @@ test("launchNotice: welcome on a fresh install, what's new after an update, sile
   assert.match(existing, /Jarvis 0\.7\.0 is ready/);
   assert.equal(readState(dir).seenVersion, "0.7.1");
 });
+
+test("shouldAskAboutUpdate: only a person at a terminal is asked, never scripts, agents or the server", async () => {
+  const { shouldAskAboutUpdate } = await import("../src/update.js");
+  const base = { cmd: "read_file", interactive: true, machine: false, disabled: false };
+  assert.equal(shouldAskAboutUpdate(base), true);
+  assert.equal(shouldAskAboutUpdate({ ...base, cmd: "shell" }), true); // the prompt
+  assert.equal(shouldAskAboutUpdate({ ...base, interactive: false }), false); // piped / script / agent shell
+  assert.equal(shouldAskAboutUpdate({ ...base, machine: true }), false); // --format json, --raw
+  assert.equal(shouldAskAboutUpdate({ ...base, disabled: true }), false); // JARVIS_NO_UPDATE_CHECK, source checkout
+  for (const cmd of ["update", "version", "--version", "help", "completion", "serve"]) assert.equal(shouldAskAboutUpdate({ ...base, cmd }), false, cmd);
+});

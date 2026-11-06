@@ -20,8 +20,8 @@ Jarvis(jarvis-ts)의 도구 39개를 **터미널 명령**과 **로컬 MCP 서버
 5. [release-runbook](release-runbook.md) — 배포 절차 (커밋 → push → 릴리스 → 설치 검증)
 
 ## 현재 상태 (2026-11-06)
-- 최신 릴리스 **v0.9.0**(`jarvis cli`: 도우미 CLI 확인·설치) · v0.8.1(v0.8.0: PC 고유값, 감사 로그·에이전트 보기, 에이전트 친화 CLI / v0.8.1: 화면을 지워도 헤더 유지) ·  기능은 v0.6.0 — 도구 직접 실행 CLI, 인터랙티브 입력창(상태 줄·자동 제안·메뉴 패널·도구 카드·테마), MCP 서버 제어(start -d / stop / restart / status / tunnel), MCP 연결 정보, 승인 폴더·권한·allowlist 관리.
-- 테스트 40개 통과(`npm test`). 도구 39개.
+- 최신 릴리스 **v0.10.0**(첫 호출 때 업데이트 질문 → 승낙하면 이어서 실행) · v0.9.0(`jarvis cli`) · v0.8.1(v0.8.0: PC 고유값, 감사 로그·에이전트 보기, 에이전트 친화 CLI / v0.8.1: 화면을 지워도 헤더 유지) ·  기능은 v0.6.0 — 도구 직접 실행 CLI, 인터랙티브 입력창(상태 줄·자동 제안·메뉴 패널·도구 카드·테마), MCP 서버 제어(start -d / stop / restart / status / tunnel), MCP 연결 정보, 승인 폴더·권한·allowlist 관리.
+- 테스트 41개 통과(`npm test`). 도구 39개.
 - 사용자의 PC에서는 **jarvis-ts가 같은 포트(8765/8766)로 이미 실행 중**이다. 서버 관련 시험은 반드시 임시 설정 폴더와 임시 포트로 한다 → [testing-and-pitfalls](testing-and-pitfalls.md).
 - 설치는 **tarball URL**로만 안내한다(`npm install -g github:...`는 npm 11에서 깨짐).
 

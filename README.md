@@ -41,7 +41,7 @@ npm install -g https://github.com/Hannoah/jarvis-cli/archive/refs/heads/main.tar
 
 설치가 끝나면 `jarvis about`이 설치된 버전과 짧은 소개를 보여줍니다. (npm이 설치 후 스크립트를 실행하지 않고 출력도 숨기므로, 설치 명령 뒤에 붙입니다. 붙이지 않아도 처음 `jarvis`를 열면 같은 안내가 한 번 나옵니다.)
 
-빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 `jarvis update`(또는 같은 명령을 다시 실행)로 하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.9.0.tar.gz`처럼 태그를 지정하세요.
+빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 `jarvis update`(또는 같은 명령을 다시 실행)로 하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.10.0.tar.gz`처럼 태그를 지정하세요.
 
 > `npm install -g github:Hannoah/jarvis-cli` 형태는 쓰지 마세요. npm 11에서 전역 설치 시 임시 폴더로 링크가 걸려 실행이 깨집니다.
 
@@ -105,7 +105,12 @@ jarvis run_terminal "Get-Date -Format o"
 
 ### 업데이트
 
-GitHub에 새 릴리스가 올라오면 대화형 입력창을 열 때 `Update now / Later / Skip x.y.z`를 물어봅니다. 확인은 하루에 한 번이고 실패해도 조용히 넘어갑니다. 직접 하려면 `jarvis update`, 끄려면 설정 파일에 `JARVIS_NO_UPDATE_CHECK=1`(또는 같은 이름의 환경변수)을 넣습니다. 소스를 clone해서 쓰는 경우(`.git`이 있는 폴더)에는 묻지 않습니다. 설치나 업데이트 뒤 처음 열 때는 시작 안내(설정 폴더, 다음 단계) 또는 변경 내용 링크가 한 번 나옵니다.
+새 릴리스가 GitHub에 올라오면, 터미널에서 사람이 `jarvis …`를 **처음 실행할 때** 물어봅니다(`jarvis`만 친 입력창이든 `jarvis read_file …` 같은 일반 명령이든). `Update now`를 고르면 업그레이드하고, **방금 치신 그 명령을 새 버전으로 이어서 실행**합니다. `Later`는 내일 다시, `Skip x.y.z`는 그 버전은 더 묻지 않습니다.
+
+- 새 릴리스 확인은 최대 1시간에 한 번이고(결과는 저장), 실패해도 조용히 넘어갑니다.
+- 파이프·스크립트·AI 에이전트(`--format json`, `--raw` 포함)·백그라운드 서버·`jarvis update/version/help/serve`에서는 묻지 않습니다.
+- 직접 하려면 `jarvis update`, 끄려면 설정 파일에 `JARVIS_NO_UPDATE_CHECK=1`(또는 같은 이름의 환경변수)을 넣습니다. 소스를 clone해서 쓰는 경우(`.git`이 있는 폴더)에는 묻지 않습니다.
+- 설치나 업데이트 뒤 처음 열 때는 시작 안내(설정 폴더, 다음 단계) 또는 변경 내용 링크가 한 번 나옵니다.
 
 API 키·터널 ID·URL은 설정 폴더(`~/.jarvis`)에 있어서 업데이트해도 바뀌지 않습니다. 단, 실행 중인 MCP 서버는 업데이트 전 코드로 계속 돌기 때문에 `jarvis stop` 후 `jarvis start -d`가 필요합니다.
 

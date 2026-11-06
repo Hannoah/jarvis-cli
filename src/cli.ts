@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Jarvis CLI: runs the Jarvis MCP tools in-process (no HTTP, tunnel, OAuth or dashboard), or starts the MCP server.
 // Sandbox, command policy and audit log are the tools' own, so behaviour matches the server.
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -21,7 +22,7 @@ import { createMcpServer } from "./server/mcp.js";
 import { loadPlugins } from "./server/plugins.js";
 import { psExecutable } from "./security/policy.js";
 import { SERVER_CMDS, serverCommand } from "./serverCmd.js";
-import { aboutLines, launchNotice, offerUpdate, updateCommand } from "./update.js";
+import { aboutLines, launchNotice, offerUpdate, shouldAskAboutUpdate, updateCommand } from "./update.js";
 import { agentsCommand, auditCommand } from "./auditView.js";
 import { cliCommand, cliStates } from "./clis.js";
 import { updateEnvFile } from "./supervisor/settings.js";
@@ -565,9 +566,6 @@ async function shell(client: Client, tools: Tools, ctx: Ctx): Promise<void> {
 
   interactive = true;
   setTitle();
-  const serverUp = () => portOpen(ctx.cfg.port);
-  const noUpdates = !!(process.env.JARVIS_NO_UPDATE_CHECK || readEnvFile(ctx.cfg.envFile).JARVIS_NO_UPDATE_CHECK) || fs.existsSync(path.join(appDir, ".git")); // a source checkout updates with git
-  if (!noUpdates) await offerUpdate(ctx.cfg.dataDir, VERSION, serverUp);
 
   const TIPS = [
     "Type / for the command menu, or just start typing a tool name.",
@@ -635,6 +633,15 @@ async function main(): Promise<number | undefined> {
   const cmd = argv[0] ?? (isTTY && process.stdin.isTTY ? "shell" : "help"); // bare `jarvis` in a terminal = interactive
   if (["version", "--version", "-v"].includes(cmd)) return console.log(VERSION), 0;
   if (["help", "--help", "-h"].includes(cmd) && argv.length <= 1) return console.log(HELP), 0;
+
+  // A newer release? Ask before the first command; "Update now" installs it and runs this same command again with the new version.
+  const { dataDir: home0 } = prepareDataDir();
+  const updatesOff = !!(process.env.JARVIS_NO_UPDATE_CHECK || readEnvFile(path.join(home0, ".env")).JARVIS_NO_UPDATE_CHECK) || fs.existsSync(path.join(appDir, ".git")); // a source checkout updates with git
+  if (shouldAskAboutUpdate({ cmd, interactive: isTTY && !!process.stdin.isTTY, machine: jsonOut || process.argv.includes("--raw"), disabled: updatesOff })) {
+    if (await offerUpdate(home0, VERSION, () => portOpen(loadConfig({ projectDir: appDir, dataDir: home0 }).port))) {
+      return spawnSync(process.execPath, [ENTRY, ...process.argv.slice(2)], { stdio: "inherit", env: { ...process.env, JARVIS_NO_UPDATE_CHECK: "1" } }).status ?? 1;
+    }
+  }
 
   if (SERVER_CMDS.includes(cmd)) return serverCommand(cmd, argv, ENTRY);
   if (cmd === "cli") {

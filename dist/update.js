@@ -1,4 +1,4 @@
-// Update check: once a day ask GitHub for the latest release; the interactive prompt offers to install it.
+// Update check: ask GitHub for the latest release (at most hourly); the first jarvis command you run in a terminal offers to install it.
 // Also owns the messages shown when an install or update has just finished.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -8,6 +8,7 @@ import { c } from "./cliutil.js";
 import { select, withSpinner } from "./tui.js";
 const REPO = "Hannoah/jarvis-cli";
 const DAY = 86_400_000;
+const CHECK_EVERY = 3_600_000; // a release published an hour ago is offered on the next command
 export const releaseUrl = (v) => `https://github.com/${REPO}/releases/tag/v${v}`;
 const tarball = (v) => `https://github.com/${REPO}/archive/refs/tags/v${v}.tar.gz`;
 const stateFile = (dir) => path.join(dir, ".update_check.json");
@@ -57,10 +58,10 @@ export function fetchLatest(timeoutMs = 2500) {
         req.on("error", () => resolve(null));
     });
 }
-/** The newer version worth offering right now, or null. Hits the network at most once a day; Skip and Later are remembered. */
+/** The newer version worth offering right now, or null. Hits the network at most hourly; Skip and Later are remembered. */
 export async function checkForUpdate(dir, current, now = Date.now(), fetcher = fetchLatest) {
     let s = readState(dir);
-    if (!s.checkedAt || now - s.checkedAt > DAY) {
+    if (!s.checkedAt || now - s.checkedAt > CHECK_EVERY) {
         const latest = await fetcher();
         saveState(dir, { checkedAt: now, ...(latest ? { latest } : {}) }); // a failed check also waits a day, so being offline costs nothing
         s = readState(dir);
@@ -82,7 +83,7 @@ function installUpdate(version) {
     });
 }
 /** Install `latest` and say what happened. true = updated (the caller should exit: the files under this process just changed). */
-async function runUpdate(dir, current, latest, serverUp) {
+async function runUpdate(dir, current, latest, serverUp, continues = false) {
     console.log(c.dim(`Installing Jarvis ${latest}…`));
     const code = await installUpdate(latest);
     if (code) {
@@ -95,27 +96,35 @@ async function runUpdate(dir, current, latest, serverUp) {
     console.log(c.gray(`  what's new   ${releaseUrl(latest)}`));
     if (await serverUp())
         console.log(c.yellow("  The MCP server is still running the old version:  jarvis stop  then  jarvis start -d"));
-    console.log(c.gray("  Run jarvis again to use the new version."));
+    console.log(c.gray(continues ? "  Continuing with your command…" : "  Run jarvis again to use the new version."));
     return true;
 }
-/** At the start of the interactive prompt: check, ask, and install on "Update now". Exits the process after a successful update. */
+/** Commands that never ask: they must stay instant and script-safe, or they are what the update itself uses. */
+const NEVER_ASK = new Set(["update", "version", "--version", "-v", "help", "--help", "-h", "completion", "serve"]);
+/** Ask only a person at a terminal: pipes, scripts, AI agents (--format json / --raw) and the background server are never interrupted. */
+export function shouldAskAboutUpdate(o) {
+    return o.interactive && !o.machine && !o.disabled && !NEVER_ASK.has(o.cmd);
+}
+/**
+ * Before the first command of a session: if a newer release exists, ask. true = it was installed (the files under this process just
+ * changed, so the caller should run the same command again with the new version).
+ */
 export async function offerUpdate(dir, current, serverUp) {
     const latest = await withSpinner("checking for updates", checkForUpdate(dir, current));
     if (!latest)
-        return;
+        return false;
     const pick = await select(`Jarvis ${latest} is available (you have ${current}). Update now?`, [
-        { label: "Update now", hint: "installs it, then you start jarvis again", value: "now" },
+        { label: "Update now", hint: "installs it, then runs your command with the new version", value: "now" },
         { label: "Later", hint: "ask again tomorrow", value: "later" },
         { label: `Skip ${latest}`, hint: "do not ask about this version", value: "skip" },
     ]);
-    if (pick === "now") {
-        if (await runUpdate(dir, current, latest, serverUp))
-            process.exit(0);
-    }
-    else if (pick === "skip")
+    if (pick === "now")
+        return runUpdate(dir, current, latest, serverUp, true);
+    if (pick === "skip")
         saveState(dir, { skipped: latest });
     else
         saveState(dir, { snoozeUntil: Date.now() + DAY });
+    return false;
 }
 /** `jarvis update`: ignores the daily limit and Skip/Later. Returns an exit code. */
 export async function updateCommand(dir, current, serverUp) {
