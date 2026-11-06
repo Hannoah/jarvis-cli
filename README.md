@@ -41,7 +41,7 @@ npm install -g https://github.com/Hannoah/jarvis-cli/archive/refs/heads/main.tar
 
 설치가 끝나면 `jarvis about`이 설치된 버전과 짧은 소개를 보여줍니다. (npm이 설치 후 스크립트를 실행하지 않고 출력도 숨기므로, 설치 명령 뒤에 붙입니다. 붙이지 않아도 처음 `jarvis`를 열면 같은 안내가 한 번 나옵니다.)
 
-빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 `jarvis update`(또는 같은 명령을 다시 실행)로 하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.8.1.tar.gz`처럼 태그를 지정하세요.
+빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 `jarvis update`(또는 같은 명령을 다시 실행)로 하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.9.0.tar.gz`처럼 태그를 지정하세요.
 
 > `npm install -g github:Hannoah/jarvis-cli` 형태는 쓰지 마세요. npm 11에서 전역 설치 시 임시 폴더로 링크가 걸려 실행이 깨집니다.
 
@@ -279,6 +279,22 @@ Jarvis는 **PC를 조작하는 도구**입니다. 아래 한계를 알고 쓰세
 - **자동 백업과 감사 로그** — 수정 전에 스냅샷을 남기고, 모든 도구 호출은 `~/.jarvis/audit.log`에 기록됩니다.
 - **비밀 보호** — Jarvis 자신의 설정·토큰 파일은 읽고 쓸 수 없습니다.
 - **한계** — 허용 목록 안의 명령(`git`, `az`, `kubectl` 등)은 그 도구가 가진 권한 그대로 동작합니다. 샌드박스는 실수를 줄이는 장치이지 악의적인 코드를 격리하는 보안 경계가 아닙니다. 신뢰하지 않는 입력으로 도구를 호출하지 마세요.
+
+## 도우미 CLI 확인·설치
+
+Jarvis의 도구들은 git, devtunnel, kubectl, az, pac, sas-viya 같은 별도 프로그램을 부릅니다. 이 PC에 있는지 확인하고, 없으면 설치할 수 있습니다.
+
+```
+jarvis cli                       # 설치 여부와 경로 (jarvis cli --json 도 됩니다)
+jarvis cli install kubectl az    # 지정한 것만 설치 (확인 질문이 나옵니다)
+jarvis cli install --yes         # 설치할 수 있는데 없는 것을 전부 설치
+```
+
+- Windows는 `winget`, macOS는 `brew`로 설치합니다. 목록과 설치 명령은 `run_kubectl`·`run_azure_cli` 등이 쓰는 것과 같습니다. 입력창에서는 `/cli`, `/doctor`도 같은 결과를 보여 줍니다.
+- 패키지 관리자로 설치할 수 없는 것은 이유와 방법만 알려 줍니다: `sas-viya`(SAS Viya Operations Center에서 받기), `pangpcli`(GlobalProtect 명령줄 도구. 조직의 GlobalProtect 배포에 포함돼야 하며 IT에 문의).
+- 설치는 소프트웨어를 바꾸는 일이라 사용자가 직접 실행할 때만 합니다. AI 에이전트용 MCP 도구로는 열어 두지 않았습니다(원격에서 윈도우 권한 확인창이 뜨면 아무도 못 봅니다). 에이전트는 없을 때 설치 안내를 받습니다.
+- Dev Tunnel(`devtunnel`)은 `jarvis start` 때 없으면 자동으로 설치합니다(Windows).
+- 일부는 관리자 권한 확인창(UAC)이 뜹니다(예: Azure CLI). 설치 직후 PATH에 안 잡히면 새 터미널을 여세요.
 
 ## PC 고유값 (API 키 · 터널 · URL)
 

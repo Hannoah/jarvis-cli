@@ -12,7 +12,7 @@ import { z } from "zod";
 import { enrichEnv, splitArgs, which } from "../system/cliEnv.js";
 import { json, mutating } from "./common.js";
 const isWin = process.platform === "win32";
-function catalog(home) {
+export function catalog(home) {
     const viyaDirs = process.env.VIYA_CLI_DIR ? [process.env.VIYA_CLI_DIR] : []; // sas-viya has no standard install folder: set VIYA_CLI_DIR or put it on PATH
     const gitBins = isWin
         ? [path.join(home, "AppData/Local/Programs/Git/usr/bin"), path.join(home, "AppData/Local/Programs/Git/bin"), "C:/Program Files/Git/usr/bin", "C:/Program Files/Git/bin"]
@@ -46,6 +46,27 @@ function catalog(home) {
             dirs: viyaDirs,
             install: "Download sas-viya from SAS Viya Operations Center, then add it to PATH or set VIYA_CLI_DIR",
             url: "https://go.documentation.sas.com/doc/en/sasadmincdc/default/calcli/titlepage.htm",
+        },
+        git: {
+            display: "Git",
+            binaries: isWin ? ["git.exe"] : ["git"],
+            dirs: isWin ? [path.join(home, "AppData/Local/Programs/Git/cmd"), "C:/Program Files/Git/cmd"] : ["/usr/bin", "/opt/homebrew/bin", "/usr/local/bin"],
+            install: winOrBrew("Git.Git", "git"),
+            url: "https://git-scm.com/downloads",
+        },
+        devtunnel: {
+            display: "Microsoft Dev Tunnel (devtunnel)",
+            binaries: isWin ? ["devtunnel.exe"] : ["devtunnel"],
+            dirs: [path.join(home, "AppData/Local/Microsoft/WinGet/Links"), path.join(home, "bin")],
+            install: isWin ? "winget install -e --id Microsoft.devtunnel" : "Run: curl -sL https://aka.ms/DevTunnelCliInstall | bash",
+            url: "https://aka.ms/devtunnels/cli",
+        },
+        pangpcli: {
+            display: "GlobalProtect CLI (pangpcli)",
+            binaries: isWin ? ["pangpcli.exe"] : ["globalprotect"],
+            dirs: ["C:/Program Files/Palo Alto Networks/GlobalProtect", "/usr/local/bin"],
+            install: "Comes with your organisation's GlobalProtect deployment; ask IT for a build that includes the command-line launcher",
+            url: "https://docs.paloaltonetworks.com/globalprotect",
         },
         sh: {
             display: isWin ? "POSIX Shell (Git Bash sh.exe)" : "POSIX Shell (sh)",

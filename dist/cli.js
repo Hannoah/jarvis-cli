@@ -19,6 +19,7 @@ import { psExecutable } from "./security/policy.js";
 import { SERVER_CMDS, serverCommand } from "./serverCmd.js";
 import { aboutLines, launchNotice, offerUpdate, updateCommand } from "./update.js";
 import { agentsCommand, auditCommand } from "./auditView.js";
+import { cliCommand, cliStates } from "./clis.js";
 import { updateEnvFile } from "./supervisor/settings.js";
 import { enrichEnv, which } from "./system/cliEnv.js";
 import { openDefault } from "./system/platform.js";
@@ -33,6 +34,7 @@ ${c.dim("Usage")}
   jarvis ${c.cyan("help")} <tool>            parameters and usage  (also: jarvis <tool> --help)
   jarvis ${c.cyan("shell")}                  same as plain \`jarvis\` (also reads commands from a pipe)
   jarvis ${c.cyan("completion")} <powershell|bash>   print a completion script
+  jarvis ${c.cyan("cli")} [check|install <name...> --yes]   which helper CLIs (git, devtunnel, kubectl, az, pac, ...) are installed; install the missing ones
   jarvis ${c.cyan("about")}                  version and a short introduction
   jarvis ${c.cyan("audit")} [--tool x --status BLOCKED --agent x --since 2h -n 50 --json]   read the audit log
   jarvis ${c.cyan("agents")} [--since 7d --json]   which agents use the MCP server and the CLI
@@ -108,10 +110,10 @@ function list(tools, rest) {
         console.error(c.yellow(`No tool matches '${q}'.`));
 }
 const completion = (shell, names) => shell === "bash"
-    ? `complete -W "list help shell completion update about audit agents ${SERVER_CMDS.join(" ")} ${names.join(" ")}" jarvis`
+    ? `complete -W "list help shell completion update about audit agents cli ${SERVER_CMDS.join(" ")} ${names.join(" ")}" jarvis`
     : `Register-ArgumentCompleter -Native -CommandName jarvis -ScriptBlock {
   param($word, $ast, $pos)
-  '${["list", "help", "shell", "completion", "update", "about", "audit", "agents", ...SERVER_CMDS, ...names].join("','")}' -split ',' | Where-Object { $_ -like "$word*" } |
+  '${["list", "help", "shell", "completion", "update", "about", "audit", "agents", "cli", ...SERVER_CMDS, ...names].join("','")}' -split ',' | Where-Object { $_ -like "$word*" } |
     ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }
 }`;
 /** Call a tool and print its result. Returns the process exit code. In the prompt each call is drawn as a small card. */
@@ -353,10 +355,8 @@ async function shell(client, tools, ctx) {
         line(writable, "settings folder is writable", ctx.cfg.dataDir);
         const missing = ctx.cfg.allowedDirs.filter((d) => !fs.existsSync(d));
         line(!missing.length, "allowed folders exist", missing.join("; "));
-        for (const [label, bins] of [["git", ["git"]], ["devtunnel (external access)", ["devtunnel"]], ["kubectl", ["kubectl"]], ["Azure CLI", ["az"]], ["Power Platform CLI", ["pac"]], ["SAS Viya CLI", ["sas-viya"]]]) {
-            const found = which([...bins], process.env);
-            line(found ? true : null, label, found ?? "not found (optional)");
-        }
+        for (const s of cliStates(ctx.cfg.home))
+            line(s.path ? true : null, s.display, s.path ?? `not found (optional)${s.installable ? ` · jarvis cli install ${s.key}` : ""}`);
     }
     async function config(arg) {
         const f = ctx.cfg.envFile;
@@ -520,10 +520,11 @@ async function shell(client, tools, ctx) {
         },
         "/clear": { hint: "Clear the screen (the Jarvis header is drawn again)", run: clearScreen },
         "/status": { hint: "Version, folder, access policy and MCP server state", run: status },
-        "/doctor": { hint: "Check Node, PowerShell, git, devtunnel and other prerequisites", run: doctor },
+        "/doctor": { hint: "Check Node, PowerShell and the helper CLIs (git, devtunnel, kubectl, ...)", run: doctor },
         "/config": { hint: "Show the settings file (secrets masked); /config edit opens it", run: config },
         "/theme": { hint: "Change the accent colour theme (saved): blue, violet, emerald, amber, rose, mono", run: themeCmd },
         "/memory": { hint: "Wiki memory index (wiki_index)", run: async () => execTool("wiki_index") },
+        "/cli": { hint: "Helper CLIs (git, devtunnel, kubectl, az, ...): check, or /cli install <name> --yes", run: async (a) => void (await cliCommand(ctx.cfg, tokenize(a))) },
         "/audit": { hint: "Read the audit log: /audit --tool run_terminal --since 2h", run: async (a) => void auditCommand(ctx.cfg, tokenize(a)) },
         "/agents": { hint: "Which agents use the MCP server and the CLI", run: async (a) => void agentsCommand(ctx.cfg, tokenize(a)) },
         "/dirs": { hint: "Approved folders: list, add, remove (saved)", run: adminSlash("dirs", dirsMenu) },
@@ -680,6 +681,10 @@ async function main() {
         return console.log(HELP), 0;
     if (SERVER_CMDS.includes(cmd))
         return serverCommand(cmd, argv, ENTRY);
+    if (cmd === "cli") {
+        const { dataDir } = prepareDataDir();
+        return cliCommand(loadConfig({ projectDir: appDir, dataDir }), argv.slice(1));
+    }
     if (cmd === "audit" || cmd === "agents") {
         const { dataDir } = prepareDataDir();
         return (cmd === "audit" ? auditCommand : agentsCommand)(loadConfig({ projectDir: appDir, dataDir }), argv.slice(1));

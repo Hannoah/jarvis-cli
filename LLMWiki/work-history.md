@@ -90,3 +90,10 @@
 | 요청 | 한 일 | 함정/결정 |
 |---|---|---|
 | "클리어를 하면 이게 뭔 서비스인지도 모르겠다, 다 사라져서" | `/clear`·`clear`·`cls`·Ctrl+L 뒤에 로고·버전·`N tools · folders · policy · MCP server` 줄을 다시 그린다(`bannerText`, `statusLine`, `clearScreen`). Ctrl+L은 readline이 자체 처리하므로 `ask()`의 `onClear` 옵션으로 헤더 + 상태 줄 + 입력 중이던 글자를 다시 그림 | 단위 테스트는 Ctrl+L(가짜 TTY)만 검증했다. `/clear`의 실제 터미널 모양은 눈으로 확인하지 못했다(TTY는 실제 터미널에서 확인해야 한다는 기존 교훈) |
+
+## v0.9.0 — `jarvis cli`: 도우미 CLI 확인·설치
+
+| 요청 | 한 일 | 함정/결정 |
+|---|---|---|
+| "Jarvis에 CLI가 있는지 확인하고 없으면 설치하는 것도" (GlobalProtect VPN 질문에서 이어짐) | `src/clis.ts`: `jarvis cli [check\|install <name…> --yes] [--json]`, `/cli`, `/doctor`가 같은 목록을 씀. 목록은 enterprise 도구의 `catalog`를 재사용하고 git, devtunnel, pangpcli(GlobalProtect)를 추가. winget/brew 한 줄 명령만 자동 설치, 나머지(sas-viya, pangpcli)는 이유와 방법만 안내 | **`winget`은 앱 실행 별칭이라 PATH 검색(`which`)으로 못 찾고 실행은 된다** → 존재 확인을 `winget --version` 실행으로 했다(처음 구현은 항상 "winget 없음"으로 거부했을 것). 설치 경로 자체는 이 PC에 빠진 설치 가능 CLI가 없어서 **실제 설치는 시험하지 못했다**(확인 경로와 거부 경로, `installPlan` 단위 테스트만). MCP 도구로는 열지 않음: 원격 에이전트가 UAC 확인창을 띄우면 아무도 못 본다 |
+| GlobalProtect VPN | 이 PC의 GlobalProtect 6.3.3(MSI)에는 `pangpcli.exe`가 **없다**. Jarvis로 연결하려면 CLI가 필요하고, 문서상 `-start -portal`, `-disconnect`, `-status`가 있다는 검색 결과만 확인(문서 페이지 본문은 못 읽음) | 연결 방식이 `user-logon`(로그인 시 자동). VPN을 켜면 Dev Tunnel이 끊길 수 있음. 상태만 알려 주는 읽기 전용 도구는 가능, 켜는 기능은 CLI 확인 후 |
