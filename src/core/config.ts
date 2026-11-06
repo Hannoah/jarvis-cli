@@ -4,6 +4,9 @@ import path from "node:path";
 
 export type TerminalMode = "allowlist" | "blocklist";
 
+/** The PC's connection values (API key, tunnel id, URL): one fixed file per OS user, whatever settings folder is in use. See security/identity.ts. */
+export const identityFile = (home: string): string => path.join(home, ".jarvis", "identity.json");
+
 export interface Config {
   /** The program folder (code, plugins). */
   projectDir: string;
@@ -192,7 +195,7 @@ function guardsOf(cfg: Config): GuardPaths {
   if (!g) {
     g = {
       dataDir: realResolve(cfg.dataDir),
-      secrets: [".env", ".oauth_tokens.json", ".dashboard_token"].map((r) => realResolve(path.join(cfg.dataDir, r))),
+      secrets: [".env", ".oauth_tokens.json", ".dashboard_token"].map((r) => realResolve(path.join(cfg.dataDir, r))).concat(realResolve(identityFile(cfg.home))),
       states: ["audit.log", ".backups", ".scheduled"]
         .map((r) => realResolve(path.join(cfg.dataDir, r)))
         .concat(realResolve(path.join(cfg.dataDir, "custom_tools"))),

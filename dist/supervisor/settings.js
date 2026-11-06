@@ -1,37 +1,10 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { writeFileAtomic } from "../files/fsutil.js";
 import { expandPath, loadConfig, readEnvFile, realResolve } from "../core/config.js";
-/** Rewrite KEY=value lines in .env, keeping every other line (comments, unknown keys) untouched. null removes a key. */
-export function updateEnvFile(file, updates) {
-    let lines = [];
-    try {
-        lines = fs.readFileSync(file, "utf8").replace(/^﻿/, "").split(/\r?\n/);
-        if (lines[lines.length - 1] === "")
-            lines.pop();
-    }
-    catch {
-        /* new file */
-    }
-    const pending = new Map(Object.entries(updates));
-    const out = [];
-    for (const line of lines) {
-        const key = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(line)?.[1];
-        if (key && pending.has(key)) {
-            const v = pending.get(key);
-            pending.delete(key);
-            if (v !== null)
-                out.push(`${key}=${v}`);
-        }
-        else
-            out.push(line);
-    }
-    for (const [k, v] of pending)
-        if (v !== null)
-            out.push(`${k}=${v}`);
-    writeFileAtomic(file, out.join("\n") + "\n");
-}
+import { updateEnvFile } from "../core/envfile.js";
+import { setIdentity } from "../security/identity.js";
+export { updateEnvFile } from "../core/envfile.js";
 export function viewSettings(projectDir, cfg = loadConfig({ projectDir })) {
     const env = readEnvFile(cfg.envFile);
     const key = (env.PC_MCP_API_KEY ?? "").trim();
@@ -54,9 +27,9 @@ export class SettingsError extends Error {
 }
 const BOOLS = { enable_read: "PC_MCP_ENABLE_READ", enable_write: "PC_MCP_ENABLE_WRITE", enable_terminal: "PC_MCP_ENABLE_TERMINAL", auto_approve: "PC_MCP_AUTO_APPROVE" };
 /** Validate and persist a settings patch. Returns the keys that changed (the server must restart to apply them). */
-export function applySettings(projectDir, patch) {
-    const cfg = loadConfig({ projectDir });
+export function applySettings(projectDir, patch, cfg = loadConfig({ projectDir })) {
     const updates = {};
+    let tunnel;
     if (patch.allowed_dirs !== undefined) {
         if (!Array.isArray(patch.allowed_dirs) || patch.allowed_dirs.length > 20)
             throw new SettingsError("allowed_dirs must be a list of at most 20 folders.");
@@ -97,17 +70,19 @@ export function applySettings(projectDir, patch) {
         const s = String(patch.devtunnel_id).trim();
         if (!/^[A-Za-z0-9._-]*$/.test(s))
             throw new SettingsError("Invalid tunnel id.");
-        updates.PC_MCP_DEVTUNNEL_ID = s;
-        updates.PC_MCP_PUBLIC_URL = ""; // stale for a different tunnel
+        tunnel = { tunnelId: s, publicUrl: "" }; // the user asked for this tunnel; the old URL is stale for it
     }
-    if (!Object.keys(updates).length)
+    if (!Object.keys(updates).length && !tunnel)
         throw new SettingsError("Nothing to change.");
-    updateEnvFile(cfg.envFile, updates);
-    return Object.keys(updates);
+    if (Object.keys(updates).length)
+        updateEnvFile(cfg.envFile, updates);
+    if (tunnel)
+        setIdentity(cfg.envFile, cfg.home, tunnel); // the PC's tunnel id changes only through here (or a first creation)
+    return [...Object.keys(updates), ...(tunnel ? ["PC_MCP_DEVTUNNEL_ID", "PC_MCP_PUBLIC_URL"] : [])];
 }
 export function regenerateApiKey(cfg) {
     const key = `pcmcp_${crypto.randomBytes(24).toString("base64url")}`;
-    updateEnvFile(cfg.envFile, { PC_MCP_API_KEY: key });
+    setIdentity(cfg.envFile, cfg.home, { apiKey: key }); // a user-requested rotation: the new key becomes the PC's key
     return key;
 }
 export function readApiKey(cfg) {

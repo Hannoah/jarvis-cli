@@ -12,7 +12,7 @@ function setup() {
   const data = path.join(root, "data");
   fs.mkdirSync(data);
   fs.writeFileSync(path.join(data, ".env"), `PC_MCP_ALLOWED_DIRS=${a};${b}\n`);
-  const cfg = loadConfig({ projectDir: root, dataDir: data });
+  const cfg = loadConfig({ projectDir: root, dataDir: data, home: root });
   return { cfg, a: a!, b: b!, c: c!, env: () => readEnvFile(path.join(data, ".env")) };
 }
 const quiet = async <T>(f: () => Promise<T>): Promise<T> => {

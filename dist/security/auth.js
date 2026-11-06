@@ -11,6 +11,7 @@ import fs from "node:fs";
 import { readEnvFile } from "../core/config.js";
 import { writeFileAtomic } from "../files/fsutil.js";
 import { VERSION } from "../core/version.js";
+import { setIdentity, syncIdentity } from "./identity.js";
 export const DEFAULT_CLIENT_ID = "jarvis"; // never checked by the server: clients registered under the old "pc-mcp-client" keep working
 const ACCESS_TOKEN_TTL = 365 * 86400; // 1 year: avoids daily disconnects
 const REFRESH_TOKEN_TTL = 365 * 86400;
@@ -30,20 +31,12 @@ function safeEqual(a, b) {
 }
 const unquote = (s) => s.trim().replace(/^["']+|["']+$/g, "");
 export function getOrCreateApiKey(cfg) {
+    syncIdentity(cfg.envFile, cfg.home); // the PC's key wins over whatever this settings folder says
     const existing = (readEnvFile(cfg.envFile).PC_MCP_API_KEY ?? process.env.PC_MCP_API_KEY ?? "").trim();
     if (existing)
         return existing;
     const key = `pcmcp_${crypto.randomBytes(24).toString("base64url")}`;
-    let text = "";
-    try {
-        text = fs.readFileSync(cfg.envFile, "utf8");
-    }
-    catch {
-        /* new file */
-    }
-    if (text && !text.endsWith("\n"))
-        text += "\n";
-    fs.writeFileSync(cfg.envFile, `${text}PC_MCP_API_KEY=${key}\n`, { encoding: "utf8", mode: 0o600 });
+    setIdentity(cfg.envFile, cfg.home, { apiKey: key }); // first creation only: from now on this is the PC's key
     return key;
 }
 /** Identifies the API key the tokens were issued under (not reversible to the key itself). */
@@ -149,12 +142,12 @@ function parseForm(body) {
             out[k] = v;
     return out;
 }
-async function readBody(req) {
+export async function readBody(req, max = MAX_BODY) {
     const chunks = [];
     let size = 0;
     for await (const c of req) {
         size += c.length;
-        if (size > MAX_BODY)
+        if (size > max)
             throw new Error("body too large");
         chunks.push(c);
     }
@@ -231,6 +224,8 @@ export function createAuth(cfg, audit, apiKey, clientId = DEFAULT_CLIENT_ID) {
             /* deleted: (mtimeMs, size) stays (-1, -1) and matches a cached miss */
         }
         if (mtimeMs !== keyCache.mtimeMs || size !== keyCache.size) {
+            if (syncIdentity(cfg.envFile, cfg.home).length)
+                return currentKey(); // someone edited the key by hand: put the PC's back (rotate is the way to change it)
             keyCache = { mtimeMs, size, key: (readEnvFile(cfg.envFile).PC_MCP_API_KEY ?? "").trim() || apiKey };
         }
         return keyCache.key;

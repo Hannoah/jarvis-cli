@@ -127,6 +127,25 @@ export async function updateCommand(dir, current, serverUp) {
         return console.log(`${c.green("✔")} Jarvis ${current} is up to date.`), 0;
     return (await runUpdate(dir, current, latest, serverUp)) ? 0 : 1;
 }
+/** What Jarvis is, in five lines: shown after an install and by `jarvis about`. */
+export function introBody(tools) {
+    return [
+        c.gray(`  ${tools ?? "Dozens of"} tools for files, terminal, git, web and wiki on this PC, limited to the folders you approve.`),
+        c.gray("  Use them here        jarvis read_file notes.txt   ·   jarvis (interactive prompt)   ·   jarvis list"),
+        c.gray("  or as an MCP server  jarvis start -d, then jarvis mcp for the URL and key (Copilot Studio, Claude, Cursor)"),
+        c.gray("  Stays safe           approved folders only · terminal allowlist · every call is audited (jarvis audit, jarvis agents)"),
+        c.gray("  For AI agents        jarvis list --json shows every tool with its parameters; add --format json to get one JSON line back"),
+    ];
+}
+/** `jarvis about`. */
+export function aboutLines(version, tools, settingsDir) {
+    return [
+        `${c.bold(`Jarvis ${version}`)} ${c.gray("· your PC's tools for you and your AI agents")}`,
+        ...introBody(tools),
+        c.gray(`  Settings             ${settingsDir}`),
+        c.gray(`  Docs and releases    https://github.com/${REPO}`),
+    ];
+}
 /**
  * Shown once after Jarvis was installed or updated (including updates done with a plain `npm install -g`): the first start of a
  * new version. null when this version was already announced.
@@ -139,9 +158,9 @@ export function launchNotice(dir, current, o) {
     if (!seen && !o.hadSettings) {
         return [
             `${c.green("✔")} ${c.bold(`Jarvis ${current} is installed.`)}`,
-            c.gray(`  settings   ${o.settingsDir}  (approved folders, API key and logs live here)`),
-            c.gray("  next       /help for the basics · /permissions to choose folders and access"),
-            c.gray("             jarvis start -d runs the MCP server for Copilot Studio, Claude and Cursor"),
+            ...introBody(o.tools),
+            c.gray(`  Settings             ${o.settingsDir}  (approved folders, API key and logs live here)`),
+            c.gray("  Next                 /help for the basics · /permissions to choose folders and access"),
         ];
     }
     return [

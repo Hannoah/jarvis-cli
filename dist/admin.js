@@ -7,9 +7,10 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { c } from "./cliutil.js";
-import { expandPath, loadConfig, readEnvFile, realResolve } from "./core/config.js";
+import { expandPath, identityFile, loadConfig, readEnvFile, realResolve } from "./core/config.js";
 import { createCtx } from "./core/context.js";
 import { DEFAULT_CLIENT_ID } from "./security/auth.js";
+import { readIdentity, setIdentity, syncIdentity } from "./security/identity.js";
 import { DEFAULT_ALLOWED_COMMANDS } from "./security/policy.js";
 import { applySettings, readApiKey, regenerateApiKey } from "./supervisor/settings.js";
 import { setClipboard } from "./system/platform.js";
@@ -437,6 +438,45 @@ export async function mcp(cfg, args) {
     }
     return fail("Usage: jarvis mcp [info|key|config <client>|copy <what>|rotate --yes]");
 }
+/**
+ * The PC's connection values: one API key, tunnel id and URL per PC, whatever settings folder runs. They change only when asked:
+ * `mcp rotate --yes` (new key), the dashboard, or `identity import` here (take them from another settings folder, e.g. jarvis-ts's).
+ */
+async function identity(cfg, args) {
+    const [sub, arg] = args.filter((a) => !a.startsWith("--"));
+    const flags = new Set(args.filter((a) => a.startsWith("--")));
+    if (sub === "import") {
+        if (!arg)
+            return fail("Usage: jarvis identity import <settings folder or .env file> --yes");
+        const file = fs.existsSync(arg) && fs.statSync(arg).isDirectory() ? path.join(arg, ".env") : arg;
+        if (!fs.existsSync(file))
+            return fail(`Not found: ${file}`);
+        const env = readEnvFile(file);
+        const patch = { apiKey: env.PC_MCP_API_KEY, tunnelId: env.PC_MCP_DEVTUNNEL_ID, publicUrl: env.PC_MCP_PUBLIC_URL };
+        if (!patch.apiKey && !patch.tunnelId)
+            return fail(`${file} has neither PC_MCP_API_KEY nor PC_MCP_DEVTUNNEL_ID.`);
+        if (!flags.has("--yes"))
+            return fail("This replaces the key and tunnel this PC uses: clients set up with the current ones stop working. Repeat with --yes to confirm.");
+        const given = Object.fromEntries(Object.entries(patch).filter(([, v]) => v));
+        setIdentity(cfg.envFile, cfg.home, given);
+        console.log(c.green(`✔ This PC now uses the key and tunnel from ${file}`));
+        console.log(c.dim("  Restart the server to apply it:  jarvis stop  then  jarvis start -d"));
+        return 0;
+    }
+    if (sub)
+        return fail("Usage: jarvis identity [import <folder|.env> --yes]");
+    const fixed = syncIdentity(cfg.envFile, cfg.home); // records the values on first use, puts back any that this settings folder had changed
+    const id = readIdentity(cfg.home);
+    console.log(c.bold("This PC's connection values") + c.dim("  (the same whichever settings folder or version runs)"));
+    row("api key", id.apiKey ? maskKey(id.apiKey) : c.dim("(none yet: created the first time the server starts)"));
+    row("tunnel id", id.tunnelId ?? c.dim("(none yet: created with the tunnel)"));
+    row("public url", id.publicUrl ?? c.dim("(known once the tunnel is online)"));
+    row("stored in", identityFile(cfg.home));
+    if (fixed.length)
+        console.log(c.yellow(`  ${fixed.join(", ")} in ${cfg.envFile} differed and was put back to the PC's value.`));
+    console.log(c.dim("\n  Changes only on request: jarvis mcp rotate --yes · dashboard settings · jarvis identity import <folder> --yes"));
+    return 0;
+}
 export async function adminCommand(name, args, cfg) {
     try {
         switch (name) {
@@ -448,6 +488,7 @@ export async function adminCommand(name, args, cfg) {
             case "permissions": return await permissions(cfg, args);
             case "allowlist": return await allowlist(cfg, args);
             case "mcp": return await mcp(cfg, args);
+            case "identity": return await identity(cfg, args);
         }
     }
     catch (e) {

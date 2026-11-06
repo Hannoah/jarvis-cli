@@ -11,13 +11,14 @@ import { adminCommand, BROAD, row, startBackground, status as liveStatus } from 
 import { c, categorize, cmdline, coerce, currentTheme, errorOf, exitCodeOf, gradient, isTTY, parseArgs, propType, render, setTheme, shortPath, suggest, themeNames, themeSwatch, tokenize, toolHelp, truncate, usage, } from "./cliutil.js";
 import { expandPath, isResolvedPathAllowed, loadConfig, readEnvFile, realResolve } from "./core/config.js";
 import { createCtx } from "./core/context.js";
-import { appDir, prepareDataDir } from "./core/paths.js";
+import { appDir, dataDirOf, prepareDataDir } from "./core/paths.js";
 import { VERSION } from "./core/version.js";
 import { createMcpServer } from "./server/mcp.js";
 import { loadPlugins } from "./server/plugins.js";
 import { psExecutable } from "./security/policy.js";
 import { SERVER_CMDS, serverCommand } from "./serverCmd.js";
-import { launchNotice, offerUpdate, updateCommand } from "./update.js";
+import { aboutLines, launchNotice, offerUpdate, updateCommand } from "./update.js";
+import { agentsCommand, auditCommand } from "./auditView.js";
 import { updateEnvFile } from "./supervisor/settings.js";
 import { enrichEnv, which } from "./system/cliEnv.js";
 import { openDefault } from "./system/platform.js";
@@ -32,6 +33,9 @@ ${c.dim("Usage")}
   jarvis ${c.cyan("help")} <tool>            parameters and usage  (also: jarvis <tool> --help)
   jarvis ${c.cyan("shell")}                  same as plain \`jarvis\` (also reads commands from a pipe)
   jarvis ${c.cyan("completion")} <powershell|bash>   print a completion script
+  jarvis ${c.cyan("about")}                  version and a short introduction
+  jarvis ${c.cyan("audit")} [--tool x --status BLOCKED --agent x --since 2h -n 50 --json]   read the audit log
+  jarvis ${c.cyan("agents")} [--since 7d --json]   which agents use the MCP server and the CLI
   jarvis ${c.cyan("update")}                 look for a newer release on GitHub and install it (the prompt also offers it once a day)
 
 ${c.dim("MCP server")}  (for Copilot Studio, Claude, Cursor, ...)
@@ -54,12 +58,15 @@ ${c.dim("Arguments")}
   --name value    or --name=value; bare --flag = true; arrays/objects take JSON
   --json '{...}'  all arguments as JSON
   --raw           print the tool's exact text (default when piped)
+  --format json   one JSON line: {"ok","tool","exit_code","result"}  (for scripts and AI agents; also: list --json, help <tool> --json)
 
 ${c.dim("Notes")}
   Settings: ~/.jarvis/.env (or JARVIS_HOME). Relative paths are relative to the current folder when it is allowed.
   Exit codes: 0 ok, 1 tool/runtime error, 2 missing arguments. NO_COLOR disables colors.
 `;
 const ENTRY = fileURLToPath(import.meta.url); // this file, for spawning the background supervisor
+let jsonOut = false; // --format json: every tool result is one JSON line (for scripts and AI agents)
+let agentAudit = null; // set when an AI agent (JARVIS_AGENT, Claude Code) runs the CLI: records the call
 let interactive = false; // set by the prompt: adds a per-call status line after each tool result
 const took = (ms) => (ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`);
 // "JARVIS" in the ANSI Shadow font, six rows; coloured with the theme gradient on the welcome screen
@@ -79,7 +86,7 @@ function list(tools, rest) {
     const q = rest.find((a) => !a.startsWith("--"))?.toLowerCase();
     const shown = tools.filter((t) => !q || t.name.includes(q.replace(/-/g, "_")) || (t.description ?? "").toLowerCase().includes(q));
     if (flags.has("--json"))
-        return void console.log(JSON.stringify(shown.map((t) => ({ name: t.name, description: t.description }))));
+        return void console.log(JSON.stringify(shown.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))));
     if (flags.has("--names"))
         return void console.log(shown.map((t) => t.name).join("\n"));
     const w = Math.max(0, ...shown.map((t) => t.name.length));
@@ -101,10 +108,10 @@ function list(tools, rest) {
         console.error(c.yellow(`No tool matches '${q}'.`));
 }
 const completion = (shell, names) => shell === "bash"
-    ? `complete -W "list help shell completion update ${SERVER_CMDS.join(" ")} ${names.join(" ")}" jarvis`
+    ? `complete -W "list help shell completion update about audit agents ${SERVER_CMDS.join(" ")} ${names.join(" ")}" jarvis`
     : `Register-ArgumentCompleter -Native -CommandName jarvis -ScriptBlock {
   param($word, $ast, $pos)
-  '${["list", "help", "shell", "completion", "update", ...SERVER_CMDS, ...names].join("','")}' -split ',' | Where-Object { $_ -like "$word*" } |
+  '${["list", "help", "shell", "completion", "update", "about", "audit", "agents", ...SERVER_CMDS, ...names].join("','")}' -split ',' | Where-Object { $_ -like "$word*" } |
     ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }
 }`;
 /** Call a tool and print its result. Returns the process exit code. In the prompt each call is drawn as a small card. */
@@ -115,6 +122,19 @@ async function execute(client, tool, args, raw) {
     if (interactive) {
         const flags = cmdline(tool.name, args).slice(tool.name.length).trim();
         console.log(`${c.accent("●")} ${c.bold(tool.name)}${flags ? c.gray(`  ${truncate(flags, Math.max(10, cols - tool.name.length - 4))}`) : ""}`);
+    }
+    if (jsonOut) {
+        const r = await client.callTool({ name: tool.name, arguments: args });
+        const texts = (r.content ?? []).filter((p) => p.type === "text").map((p) => p.text ?? "");
+        const failed = r.isError || texts.some((t) => errorOf(t) || exitCodeOf(t));
+        const body = texts.join("\n");
+        let result = body;
+        try {
+            result = JSON.parse(body);
+        }
+        catch { /* plain text result */ }
+        console.log(JSON.stringify({ ok: !failed, tool: tool.name, exit_code: failed ? 1 : 0, result }));
+        return failed ? 1 : 0;
     }
     const call = client.callTool({ name: tool.name, arguments: args });
     const res = await (raw ? call : withSpinner(tool.name, call));
@@ -157,6 +177,8 @@ async function run(client, tools, argv, raw) {
             return console.error(c.red("✖ Usage: jarvis completion <powershell|bash>")), 2;
         return console.log(completion(rest[0], tools.map((t) => t.name))), 0;
     }
+    if (cmd === "about")
+        return console.log(aboutLines(VERSION, tools.length, shortPath(dataDirOf(), os.homedir(), 60)).join("\n")), 0;
     const wanted = cmd === "help" ? rest[0] ?? "" : cmd;
     const tool = tools.find((t) => t.name === wanted.replace(/-/g, "_"));
     if (!tool) {
@@ -166,15 +188,18 @@ async function run(client, tools, argv, raw) {
     }
     const schema = tool.inputSchema;
     if (cmd === "help")
-        return console.log(toolHelp(tool)), 0;
+        return console.log(jsonOut ? JSON.stringify({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema }) : toolHelp(tool)), 0;
     const { args, help } = parseArgs(rest, schema);
     if (help)
         return console.log(toolHelp(tool)), 0;
     const missing = (schema.required ?? []).filter((k) => args[k] === undefined);
+    if (missing.length && jsonOut)
+        return console.log(JSON.stringify({ ok: false, tool: tool.name, exit_code: 2, error: `Missing required: ${missing.join(", ")}`, usage: usage(tool.name, schema) })), 2;
     if (missing.length) {
         console.error(c.red(`✖ Missing required: ${missing.map((k) => `--${k}`).join(", ")}`) + `\n${c.dim("Usage:")} ${usage(tool.name, schema)}`);
         return 2;
     }
+    agentAudit?.(tool.name);
     return execute(client, tool, args, raw);
 }
 // ---------- interactive mode ----------
@@ -474,6 +499,8 @@ async function shell(client, tools, ctx) {
         "/config": { hint: "Show the settings file (secrets masked); /config edit opens it", run: config },
         "/theme": { hint: "Change the accent colour theme (saved): blue, violet, emerald, amber, rose, mono", run: themeCmd },
         "/memory": { hint: "Wiki memory index (wiki_index)", run: async () => execTool("wiki_index") },
+        "/audit": { hint: "Read the audit log: /audit --tool run_terminal --since 2h", run: async (a) => void auditCommand(ctx.cfg, tokenize(a)) },
+        "/agents": { hint: "Which agents use the MCP server and the CLI", run: async (a) => void agentsCommand(ctx.cfg, tokenize(a)) },
         "/dirs": { hint: "Approved folders: list, add, remove (saved)", run: adminSlash("dirs", dirsMenu) },
         "/add-dir": { hint: "Approve a folder (saved): /add-dir <folder>", run: async (a) => void (await adminCommand("dirs", ["add", ...tokenize(a)], ctx.cfg)) },
         "/permissions": { hint: "Read/write/terminal switches and terminal mode (menu)", run: adminSlash("permissions", permissionsMenu) },
@@ -569,7 +596,7 @@ async function shell(client, tools, ctx) {
         console.log(c.bold(c.accent("\n  ◆ JARVIS")));
     console.log(c.gray(`  v${VERSION}  ·  ${shortPath(ctx.cfg.defaultWorkdir, home, Math.max(10, cols() - 24))}`));
     console.log(`${c.gray(`  ${tools.length} tools · ${nDirs} folder${nDirs === 1 ? "" : "s"} · ${policy()} · MCP server `)}${mcpUp0 ? c.green("● running") : c.gray("○ stopped")}`);
-    const notice = launchNotice(ctx.cfg.dataDir, VERSION, { hadSettings: fs.existsSync(ctx.cfg.envFile), settingsDir: shortPath(ctx.cfg.dataDir, home, Math.max(10, cols() - 70)), serverUp: mcpUp0 });
+    const notice = launchNotice(ctx.cfg.dataDir, VERSION, { hadSettings: fs.existsSync(ctx.cfg.envFile), settingsDir: shortPath(ctx.cfg.dataDir, home, Math.max(10, cols() - 70)), serverUp: mcpUp0, tools: tools.length });
     if (notice)
         console.log(notice.join("\n") + "\n");
     console.log(c.gray(truncate(`  tip: ${TIPS[Math.floor(Math.random() * TIPS.length)]}`, cols())) + "\n");
@@ -625,6 +652,11 @@ async function shell(client, tools, ctx) {
 async function main() {
     const raw = process.argv.includes("--raw") || (!isTTY && !process.env.FORCE_COLOR); // FORCE_COLOR = "treat me as a terminal"
     const argv = process.argv.slice(2).filter((a) => a !== "--raw");
+    const fi = argv.indexOf("--format");
+    if (fi >= 0) {
+        jsonOut = argv[fi + 1] === "json";
+        argv.splice(fi, 2);
+    }
     const cmd = argv[0] ?? (isTTY && process.stdin.isTTY ? "shell" : "help"); // bare `jarvis` in a terminal = interactive
     if (["version", "--version", "-v"].includes(cmd))
         return console.log(VERSION), 0;
@@ -632,6 +664,10 @@ async function main() {
         return console.log(HELP), 0;
     if (SERVER_CMDS.includes(cmd))
         return serverCommand(cmd, argv, ENTRY);
+    if (cmd === "audit" || cmd === "agents") {
+        const { dataDir } = prepareDataDir();
+        return (cmd === "audit" ? auditCommand : agentsCommand)(loadConfig({ projectDir: appDir, dataDir }), argv.slice(1));
+    }
     if (cmd === "update") {
         const { dataDir } = prepareDataDir();
         return updateCommand(dataDir, VERSION, () => portOpen(loadConfig({ projectDir: appDir, dataDir }).port));
@@ -643,6 +679,11 @@ async function main() {
     if (isResolvedPathAllowed(ctx.cfg, cwd))
         ctx.cfg.defaultWorkdir = cwd; // CLI: relative paths mean "here", when "here" is allowed
     Object.assign(process.env, enrichEnv(process.env, ctx.cfg.home, readEnvFile(ctx.cfg.envFile)));
+    const agent = process.env.JARVIS_AGENT?.trim() || (process.env.CLAUDECODE ? "claude-code" : ""); // Claude Code sets CLAUDECODE in its shell
+    if (agent && cmd !== "shell") {
+        const q = (s) => JSON.stringify(s.slice(0, 120));
+        agentAudit = (tool) => ctx.audit("cli", "AGENT", `agent=${q(agent)} ua=${q(`jarvis-cli/${VERSION}`)} via=cli ip="local" rpc=tools/call tool=${q(tool)}`);
+    }
     await loadPlugins(ctx);
     const [a, b] = InMemoryTransport.createLinkedPair();
     await createMcpServer(ctx).connect(a);

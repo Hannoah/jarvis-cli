@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+/** The PC's connection values (API key, tunnel id, URL): one fixed file per OS user, whatever settings folder is in use. See security/identity.ts. */
+export const identityFile = (home) => path.join(home, ".jarvis", "identity.json");
 /** Parse KEY=VALUE lines (comments, BOM, and simple quotes handled). */
 export function parseEnv(text) {
     const out = {};
@@ -140,7 +142,7 @@ function guardsOf(cfg) {
     if (!g) {
         g = {
             dataDir: realResolve(cfg.dataDir),
-            secrets: [".env", ".oauth_tokens.json", ".dashboard_token"].map((r) => realResolve(path.join(cfg.dataDir, r))),
+            secrets: [".env", ".oauth_tokens.json", ".dashboard_token"].map((r) => realResolve(path.join(cfg.dataDir, r))).concat(realResolve(identityFile(cfg.home))),
             states: ["audit.log", ".backups", ".scheduled"]
                 .map((r) => realResolve(path.join(cfg.dataDir, r)))
                 .concat(realResolve(path.join(cfg.dataDir, "custom_tools"))),

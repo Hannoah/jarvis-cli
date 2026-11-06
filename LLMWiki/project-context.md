@@ -22,6 +22,8 @@ jarvis-cli는 같은 도구를 두 가지로 쓰게 만든 공개 CLI다.
 | `src/supervisor/index.ts` | `stopAll()`을 만들어 `stop()`과 `shutdown`이 같이 쓰게 함 |
 | `src/server/http.ts` | `limitKey()`: 터널 트래픽(루프백 + `x-forwarded-*`)도 레이트리밋 |
 | `src/server/plugins.ts`, `src/core/config.ts` | `custom_tools/`가 설치 폴더가 아니라 설정 폴더 기준 |
+| `src/supervisor/settings.ts`, `src/security/auth.ts`, `src/supervisor/index.ts` | 키 생성·회전·터널 ID 변경이 모두 `security/identity.ts`를 거침(PC 고유값). `updateEnvFile`은 `core/envfile.ts`로 옮기고 settings가 다시 내보냄 |
+| `src/server/http.ts` (추가) | `/mcp` 본문을 먼저 읽어 `[AGENT]` 감사 줄을 남기고 파싱된 본문을 트랜스포트에 넘김 |
 | `src/tools/enterprise.ts`, `src/system/cliEnv.ts` | 개인 경로 기본값 제거(`VIYA_CLI_DIR`, `JARVIS_STATUS_DEPLOY_DIR`, `JARVIS_DEFAULT_KUBECONFIG`), 안내 문구 영어 |
 
 원본 `jarvis-ts`와 달리 `jarvis-cli`에는 `cli.ts` 외 진입점이 없다. `serve`는 `main.ts`를 import하고, supervisor는 `main.js`(빌드된 경우)를 자식 프로세스로 띄운다.

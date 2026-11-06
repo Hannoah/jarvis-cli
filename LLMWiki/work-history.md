@@ -74,3 +74,13 @@
 | `.env`에서 kubeconfig 등 지정 | `KUBECONFIG`, `JARVIS_DEFAULT_KUBECONFIG`, `VIYA_CLI_DIR`, `JARVIS_STATUS_DEPLOY_DIR`를 설정 파일에서 읽음(이 네 개만 `process.env`로 올린다) | v0.6.1에서 개인 경로 기본값을 없앴더니 지정할 방법이 환경변수뿐이었다. `.env` 전체를 올리면 API 키가 `run_terminal`이 띄우는 명령에 상속되므로 허용 목록으로만 올림 |
 
 **관측(미해결):** 이 PC에는 설정 폴더가 둘이다. `jarvis-ts/data`와 `~/.jarvis`는 API 키·터널 ID가 서로 다르다. 예전에 jarvis-ts의 URL/키로 외부 클라이언트를 설정했다면 jarvis-cli로 옮긴 뒤 끊긴다. 합치려면 한쪽의 `PC_MCP_API_KEY`·`PC_MCP_DEVTUNNEL_ID`를 다른 쪽 `.env`로 옮기고 서버를 재시작해야 한다(사용자 확인 필요).
+
+## v0.8.0 — PC 고유값, 감사 로그·에이전트 보기, 에이전트 친화 CLI
+
+| 요청 | 한 일 | 함정/결정 |
+|---|---|---|
+| "한 PC 한 고유값 원칙은 무조건 지켜지게", "사용자가 변경을 요청하는 경우에만 변경 가능하게" | `src/security/identity.ts`: API 키·터널 ID·공개 URL을 `~/.jarvis/identity.json`(PC·OS 사용자당 하나, `JARVIS_HOME`과 무관)에 기록하고 모든 설정 폴더의 `.env`를 그것에 맞춘다(`syncIdentity`). 처음 본 값이 PC의 값(없으면 `.env`에서 채택). 이후 `.env`가 다르면 시작할 때 되돌리고, **실행 중인 서버도 `.env`가 바뀌면 즉시 되돌린다**(`auth.ts` `currentKey`). 터널이 다른 ID를 보고해도 무시. 바꾸는 길은 사용자 행동뿐: `mcp rotate --yes`, 대시보드의 키 재발급·터널 ID, 새 `jarvis identity import <폴더> --yes` | **관측:** 이 PC에는 설정 폴더가 둘(`jarvis-ts/data`, `~/.jarvis`)이고 키·터널이 서로 달랐다 → 기존 외부 클라이언트가 jarvis-ts 값으로 설정돼 있었다면 jarvis-cli로 옮긴 순간 끊긴 것. 새 코드가 처음 실행될 때 `~/.jarvis` 값이 PC의 값으로 채택된다(지금 도는 서비스와 같은 값이라 끊김 없음). jarvis-ts의 값으로 바꾸려면 `jarvis identity import`. 공개 URL만은 터널이 알려주는 관측값이라 갱신을 허용. 신원 파일은 `protectionOf`에서 비밀 파일(도구가 읽지 못함). **테스트는 반드시 임시 `home`을 줄 것**(안 주면 실제 `~/.jarvis/identity.json`을 만든다) |
+| "감사로그 보는 기능 지금 있어?" | 웹 대시보드에는 있었고(활동 피드·로그 화면) CLI에는 없었다 → `jarvis audit`(`--tool --status --agent --since -n --json --full`), 입력창 `/audit` | 회전된 `audit.log.1`도 읽는다. 8MB씩만 끝에서 읽음 |
+| "MCP Server를 어떤 에이전트가 쓰는지 볼 수 있어야 해" | `server/http.ts`가 `/mcp` POST 본문을 먼저 읽어(트랜스포트에 파싱된 본문으로 넘김) `initialize`·`tools/call`마다 `[AGENT] [mcp] agent=… ver=… ua=… via=local\|tunnel\|remote ip=… rpc=… tool=…` 한 줄을 감사 로그에 남긴다. `jarvis agents`(입력창 `/agents`)가 이름별 호출 수·경로·마지막 사용·자주 쓴 도구를 보여 줌 | 트랜스포트가 stateless라 `tools/call`에는 클라이언트 이름이 없다 → `initialize`의 `clientInfo`를 UA+주소로 기억해 이어 붙임(서버 재시작 직후 이어진 호출은 UA로 표시). 클라이언트가 보낸 문자열은 `JSON.stringify`로 감싸 로그 줄 주입을 막음. 웹 대시보드에 에이전트 화면은 아직 없음 |
+| "Agent들이 이 CLI 쓰기 편하게" | `list --json`에 `inputSchema`, `help <tool> --format json`, `--format json`(한 줄 `{"ok","tool","exit_code","result"}`, 인자 누락은 종료 코드 2 + `error`/`usage`), `JARVIS_AGENT`/`CLAUDECODE`로 CLI 호출을 `[AGENT] [cli]`로 기록 | `--json`은 이미 "인자를 JSON으로" 의미라 출력 형식은 `--format json`으로 분리. 업데이트 질문·색·스피너는 사람이 여는 입력창에서만 |
+| "설치 완료되면 설치한 버전과 jarvis 소개가 있어야" | `jarvis about`(버전 + 소개 5줄 + 설정 폴더 + 문서 링크), 첫 실행 안내에 같은 소개. README 설치 명령을 `… && jarvis about`으로 | **실험으로 확인:** npm 11.16은 설치 후 스크립트를 기본 실행하지 않고(`allow-scripts` 경고) 출력도 숨긴다 → `postinstall`로는 불가능하고 경고만 늘어난다 |

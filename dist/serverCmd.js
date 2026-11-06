@@ -12,7 +12,7 @@ import { VERSION } from "./core/version.js";
 import { startSupervisor } from "./supervisor/index.js";
 import { install, uninstall } from "./system/autostart.js";
 import { openDefault } from "./system/platform.js";
-export const SERVER_CMDS = ["start", "serve", "open", "url", "install", "uninstall", "status", "stop", "restart", "tunnel", "dirs", "permissions", "allowlist", "mcp"];
+export const SERVER_CMDS = ["start", "serve", "open", "url", "install", "uninstall", "status", "stop", "restart", "tunnel", "dirs", "permissions", "allowlist", "mcp", "identity"];
 /** Returns an exit code, or undefined when the process should keep running (server / supervisor). */
 export async function serverCommand(cmd, argv, entry) {
     const { dataDir } = prepareDataDir();
@@ -36,6 +36,7 @@ export async function serverCommand(cmd, argv, entry) {
         case "permissions":
         case "allowlist":
         case "mcp":
+        case "identity":
             process.exitCode = await adminCommand(cmd, argv.slice(1), loadConfig({ projectDir: appDir, dataDir }));
             return undefined; // let the event loop drain: process.exit() right after network calls can crash on Windows
         case "open":

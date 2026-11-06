@@ -20,7 +20,7 @@ function setup() {
   fs.mkdirSync(work);
   fs.mkdirSync(data);
   fs.writeFileSync(path.join(data, ".env"), `PC_MCP_ALLOWED_DIRS=${work};${data}\nPC_MCP_DEFAULT_WORKDIR=${work}\n`);
-  const cfg = loadConfig({ projectDir: root, dataDir: data, env: {} });
+  const cfg = loadConfig({ projectDir: root, dataDir: data, env: {}, home: root });
   return { root, work, data, cfg, ctx: createCtx(cfg) };
 }
 

@@ -9,7 +9,7 @@ import { killTree, portOpen, portOwnerPid, sleep } from "../system/proc.js";
 import { VERSION } from "../core/version.js";
 import { createDashboard } from "./dashboard.js";
 import { Service } from "./service.js";
-import { updateEnvFile } from "./settings.js";
+import { readIdentity, setIdentity, syncIdentity, type Identity } from "../security/identity.js";
 import { Tunnel } from "./tunnel.js";
 
 export interface SupervisorOptions {
@@ -70,6 +70,7 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<RunningS
       /* logging must never crash the supervisor */
     }
   };
+  for (const k of syncIdentity(cfg.envFile, cfg.home)) log(`[identity] ${k} in this settings folder differed from the PC's value; restored`);
   for (const f of ["server.out.log", "server.err.log", "tunnel.log"]) trimLog(path.join(projectDir, f));
   const errLog = path.join(projectDir, "server.err.log");
   if (fs.existsSync(errLog)) fs.copyFileSync(errLog, path.join(projectDir, "server.err.prev.log")); // keep the last run's crash trace
@@ -99,7 +100,7 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<RunningS
     port: cfg.port,
     home: cfg.home,
     getTunnelId: () => readEnvFile(cfg.envFile).PC_MCP_DEVTUNNEL_ID ?? "",
-    onUpdate: (info) => applyTunnelUpdate(cfg.envFile, info, () => server.state !== "stopped" && void server.restart().catch((e) => log(`[server] restart failed: ${(e as Error).message}`)), log),
+    onUpdate: (info) => applyTunnelUpdate(cfg.envFile, cfg.home, info, () => server.state !== "stopped" && void server.restart().catch((e) => log(`[server] restart failed: ${(e as Error).message}`)), log),
     log,
     logFile: path.join(projectDir, "tunnel.log"),
     cli: opts.tunnelCli,
@@ -141,11 +142,14 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<RunningS
  * Persist the tunnel id/URL. The server reads PC_MCP_PUBLIC_URL only at startup (OAuth metadata, /health), and it is
  * usually up before the tunnel reports its URL, so a changed URL needs one server restart to take effect.
  */
-export function applyTunnelUpdate(envFile: string, info: { id: string; url: string }, restartServer: () => void, log: (m: string) => void = () => undefined): void {
+export function applyTunnelUpdate(envFile: string, home: string, info: { id: string; url: string }, restartServer: () => void, log: (m: string) => void = () => undefined): void {
   const before = (readEnvFile(envFile).PC_MCP_PUBLIC_URL ?? "").trim();
-  const u: Record<string, string | null> = { PC_MCP_DEVTUNNEL_ID: info.id };
-  if (info.url) u.PC_MCP_PUBLIC_URL = info.url;
-  updateEnvFile(envFile, u);
+  const known = readIdentity(home).tunnelId;
+  const patch: Identity = {};
+  if (!known) patch.tunnelId = info.id; // the first tunnel this PC ever got
+  else if (known !== info.id) log(`[tunnel] ignored tunnel id ${info.id}: this PC's tunnel is ${known} (change it on purpose in the dashboard)`);
+  if (info.url) patch.publicUrl = info.url; // observed: whatever the PC's tunnel reports
+  if (Object.keys(patch).length) setIdentity(envFile, home, patch);
   if (info.url && info.url !== before) {
     log(`[tunnel] public URL changed; restarting server to apply it`);
     restartServer();

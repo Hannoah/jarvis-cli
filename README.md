@@ -36,11 +36,12 @@ $ jarvis                               # 대화형 모드 (입력창·/ 메뉴·
 ### 방법 1 — 한 줄 설치 (추천)
 
 ```
-npm install -g https://github.com/Hannoah/jarvis-cli/archive/refs/heads/main.tar.gz
-jarvis version
+npm install -g https://github.com/Hannoah/jarvis-cli/archive/refs/heads/main.tar.gz && jarvis about
 ```
 
-빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 `jarvis update`(또는 같은 명령을 다시 실행)로 하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.7.0.tar.gz`처럼 태그를 지정하세요.
+설치가 끝나면 `jarvis about`이 설치된 버전과 짧은 소개를 보여줍니다. (npm이 설치 후 스크립트를 실행하지 않고 출력도 숨기므로, 설치 명령 뒤에 붙입니다. 붙이지 않아도 처음 `jarvis`를 열면 같은 안내가 한 번 나옵니다.)
+
+빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 `jarvis update`(또는 같은 명령을 다시 실행)로 하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.8.0.tar.gz`처럼 태그를 지정하세요.
 
 > `npm install -g github:Hannoah/jarvis-cli` 형태는 쓰지 마세요. npm 11에서 전역 설치 시 임시 폴더로 링크가 걸려 실행이 깨집니다.
 
@@ -278,6 +279,43 @@ Jarvis는 **PC를 조작하는 도구**입니다. 아래 한계를 알고 쓰세
 - **자동 백업과 감사 로그** — 수정 전에 스냅샷을 남기고, 모든 도구 호출은 `~/.jarvis/audit.log`에 기록됩니다.
 - **비밀 보호** — Jarvis 자신의 설정·토큰 파일은 읽고 쓸 수 없습니다.
 - **한계** — 허용 목록 안의 명령(`git`, `az`, `kubectl` 등)은 그 도구가 가진 권한 그대로 동작합니다. 샌드박스는 실수를 줄이는 장치이지 악의적인 코드를 격리하는 보안 경계가 아닙니다. 신뢰하지 않는 입력으로 도구를 호출하지 마세요.
+
+## PC 고유값 (API 키 · 터널 · URL)
+
+연결 값(API 키, 터널 ID, 공개 URL)은 **한 PC(OS 사용자)에 하나**입니다. `~/.jarvis/identity.json`에 기록되고, 설정 폴더(`JARVIS_HOME`)가 달라도, 버전을 올려도, jarvis-ts와 번갈아 써도 같은 값을 씁니다. 그래야 한 번 클라이언트(Copilot Studio, Claude, Cursor)에 넣은 값이 계속 유효합니다.
+
+- 처음 기록된 값은 **자동으로 바뀌지 않습니다.** `.env`의 키를 손으로 고치거나 다른 설정 폴더가 다른 값을 갖고 있으면 시작할 때(실행 중인 서버는 그 즉시) PC의 값으로 되돌립니다. 터널이 다른 ID를 보고해도 무시합니다.
+- **사용자가 요청할 때만** 바뀝니다: `jarvis mcp rotate --yes`(새 키), 대시보드의 API 키 재발급·터널 ID 변경, `jarvis identity import <설정 폴더> --yes`(예: 예전 jarvis-ts의 값을 이 PC의 값으로 가져오기). 바꾼 뒤에는 `jarvis stop` → `jarvis start -d`로 서버를 다시 띄우고 클라이언트의 값을 고칩니다.
+- 공개 URL은 PC의 터널이 알려주는 값을 기록합니다. 터널 자체가 devtunnel 쪽에서 만료되면 URL이 바뀔 수 있습니다(`devtunnel show`에 만료 기간 30일로 표시됩니다. 서버를 계속 띄워 두면 연장되는지는 확인하지 못했습니다).
+- `jarvis identity`로 현재 값(키는 일부만)과 저장 위치를 봅니다.
+
+## 감사 로그와 에이전트
+
+```
+jarvis audit                                  # 최근 30건
+jarvis audit --since 2h --status BLOCKED      # 최근 2시간에 막힌 것
+jarvis audit --tool run_terminal --agent claude -n 100
+jarvis agents                                 # 최근 7일, 어떤 에이전트가 얼마나 썼는지
+jarvis agents --since 1d --json
+```
+
+- **`jarvis audit`:** `audit.log`(회전된 이전 파일 포함)를 읽습니다. `--tool`, `--status`(부분 일치), `--agent`, `--since 30m|2h|7d`, `-n`, `--json`, `--full`. 입력창에서는 `/audit`입니다. 웹 대시보드의 활동·로그 화면에서도 볼 수 있습니다.
+- **`jarvis agents`:** MCP 서버에 연결한 클라이언트가 `initialize`에서 알린 이름(예: Claude Code, Copilot Studio)별로 호출 수, 연결 경로(`tunnel` 외부 / `local` 이 PC / `cli`), 마지막 사용 시각, 자주 쓴 도구를 보여줍니다. 이름을 알리지 않는 클라이언트는 User-Agent로 구분합니다. 입력창에서는 `/agents`입니다.
+- 원본 요청은 `[AGENT] [mcp]` 줄로 감사 로그에 남습니다(클라이언트가 보낸 문자열은 따옴표로 감싸 한 줄을 깨지 못합니다). 웹 대시보드에 에이전트 화면은 아직 없습니다.
+
+## AI 에이전트가 CLI로 쓸 때
+
+```
+jarvis list --json                          # 모든 도구와 매개변수 스키마(inputSchema)
+jarvis help read_file --format json         # 한 도구의 스키마
+jarvis read_file notes.txt --format json    # {"ok":true,"tool":"read_file","exit_code":0,"result":{...}}
+jarvis run_terminal --json '{"command":"git status"}' --format json
+```
+
+- `--format json`이면 결과가 **항상 한 줄 JSON**입니다(`result`는 도구의 JSON 또는 텍스트). 종료 코드는 `0` 성공 · `1` 도구 오류 · `2` 필수 인자 누락(이때도 JSON으로 `error`와 `usage`).
+- 파이프나 에이전트의 셸에서는 색상·스피너·업데이트 질문이 없습니다(질문은 사람이 여는 입력창에서만 나옵니다).
+- 어떤 에이전트가 불렀는지 남기려면 `JARVIS_AGENT=<이름>`을 지정합니다. Claude Code는 `CLAUDECODE`로 자동 인식합니다. `jarvis agents`와 `jarvis audit --agent`에서 보입니다.
+- 샌드박스(승인 폴더), 터미널 허용 목록, 감사 로그는 사람이 쓸 때와 같습니다.
 
 ## 설정
 

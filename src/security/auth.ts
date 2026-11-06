@@ -13,6 +13,7 @@ import type { Audit } from "../core/audit.js";
 import { readEnvFile, type Config } from "../core/config.js";
 import { writeFileAtomic } from "../files/fsutil.js";
 import { VERSION } from "../core/version.js";
+import { setIdentity, syncIdentity } from "./identity.js";
 
 export const DEFAULT_CLIENT_ID = "jarvis"; // never checked by the server: clients registered under the old "pc-mcp-client" keep working
 const ACCESS_TOKEN_TTL = 365 * 86400; // 1 year: avoids daily disconnects
@@ -36,17 +37,11 @@ function safeEqual(a: string, b: string): boolean {
 const unquote = (s: string) => s.trim().replace(/^["']+|["']+$/g, "");
 
 export function getOrCreateApiKey(cfg: Config): string {
+  syncIdentity(cfg.envFile, cfg.home); // the PC's key wins over whatever this settings folder says
   const existing = (readEnvFile(cfg.envFile).PC_MCP_API_KEY ?? process.env.PC_MCP_API_KEY ?? "").trim();
   if (existing) return existing;
   const key = `pcmcp_${crypto.randomBytes(24).toString("base64url")}`;
-  let text = "";
-  try {
-    text = fs.readFileSync(cfg.envFile, "utf8");
-  } catch {
-    /* new file */
-  }
-  if (text && !text.endsWith("\n")) text += "\n";
-  fs.writeFileSync(cfg.envFile, `${text}PC_MCP_API_KEY=${key}\n`, { encoding: "utf8", mode: 0o600 });
+  setIdentity(cfg.envFile, cfg.home, { apiKey: key }); // first creation only: from now on this is the PC's key
   return key;
 }
 
@@ -153,12 +148,12 @@ function parseForm(body: string): Record<string, string> {
   return out;
 }
 
-async function readBody(req: IncomingMessage): Promise<string> {
+export async function readBody(req: IncomingMessage, max = MAX_BODY): Promise<string> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const c of req) {
     size += (c as Buffer).length;
-    if (size > MAX_BODY) throw new Error("body too large");
+    if (size > max) throw new Error("body too large");
     chunks.push(c as Buffer);
   }
   return Buffer.concat(chunks).toString("utf8");
@@ -245,6 +240,7 @@ export function createAuth(cfg: Config, audit: Audit, apiKey: string, clientId =
       /* deleted: (mtimeMs, size) stays (-1, -1) and matches a cached miss */
     }
     if (mtimeMs !== keyCache.mtimeMs || size !== keyCache.size) {
+      if (syncIdentity(cfg.envFile, cfg.home).length) return currentKey(); // someone edited the key by hand: put the PC's back (rotate is the way to change it)
       keyCache = { mtimeMs, size, key: (readEnvFile(cfg.envFile).PC_MCP_API_KEY ?? "").trim() || apiKey };
     }
     return keyCache.key;

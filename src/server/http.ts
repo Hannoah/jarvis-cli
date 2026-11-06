@@ -1,9 +1,16 @@
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { createAuth } from "../security/auth.js";
+import { createAuth, readBody } from "../security/auth.js";
 import { isLoopbackIp, normalizeIp, RateLimiter } from "../security/ratelimit.js";
 import type { Ctx } from "../core/context.js";
+import { agentDetails, rpcsOf } from "./agents.js";
 import { createMcpServer } from "./mcp.js";
+
+const MAX_RPC_BODY = 4 * 1024 * 1024;
+const rpcError = (res: import("node:http").ServerResponse, status: number, code: number, message: string) => {
+  res.writeHead(status, { "content-type": "application/json" });
+  res.end(JSON.stringify({ jsonrpc: "2.0", error: { code, message }, id: null }));
+};
 
 /**
  * What to rate-limit by, or null for a genuinely local client. The Dev Tunnel connects from this machine, so tunnel
@@ -41,6 +48,18 @@ export function createHttpServer(ctx: Ctx, apiKey: string, limiter: RateLimiter 
         res.writeHead(405, { Allow: "POST" }).end();
         return;
       }
+      // Read the JSON-RPC body here (the transport accepts it pre-parsed) so the audit log can say which agent is calling.
+      let body: unknown;
+      try {
+        body = JSON.parse(await readBody(req, MAX_RPC_BODY));
+      } catch (e) {
+        return void ((e as Error).message === "body too large" ? rpcError(res, 413, -32600, "Request too large") : rpcError(res, 400, -32700, "Parse error"));
+      }
+      const ua = String(req.headers["user-agent"] ?? "").trim();
+      const ip = String(req.headers["x-forwarded-for"] ?? "").split(",")[0]!.trim() || normalizeIp(peer);
+      const via = key === "tunnel" ? "tunnel" : isLoopbackIp(peer) ? "local" : "remote";
+      for (const d of agentDetails(rpcsOf(body), { ua, ip, via })) ctx.audit("mcp", "AGENT", d);
+
       const mcp = createMcpServer(ctx);
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
       res.on("close", () => {
@@ -48,7 +67,7 @@ export function createHttpServer(ctx: Ctx, apiKey: string, limiter: RateLimiter 
         void mcp.close();
       });
       await mcp.connect(transport);
-      await transport.handleRequest(req, res);
+      await transport.handleRequest(req, res, body);
     } catch (err) {
       console.error("request failed:", err);
       if (!res.headersSent) res.writeHead(500).end();
