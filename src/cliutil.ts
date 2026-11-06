@@ -2,8 +2,19 @@
 
 export const isTTY = !!process.stdout.isTTY;
 const colorOn = !process.env.NO_COLOR && (!!process.env.FORCE_COLOR || isTTY);
-const sgr = (n: number) => (s: string) => (colorOn ? `\x1b[${n}m${s}\x1b[0m` : s);
-export const c = { bold: sgr(1), dim: sgr(2), red: sgr(31), green: sgr(32), yellow: sgr(33), cyan: sgr(36) };
+// 24-bit color where it is known to work (Windows Terminal, VS Code, COLORTERM), 256-color otherwise
+const trueColor = /truecolor|24bit/i.test(process.env.COLORTERM ?? "") || !!process.env.WT_SESSION || process.env.TERM_PROGRAM === "vscode";
+const ACCENT = trueColor ? "38;2;110;168;254" : "38;5;75";
+const esc = (code: string, s: string) => (colorOn ? `\x1b[${code}m${s}\x1b[0m` : s);
+const sgr = (n: number) => (s: string) => esc(String(n), s);
+export const c = {
+  bold: sgr(1), dim: sgr(2), red: sgr(31), green: sgr(32), yellow: sgr(33), cyan: sgr(36), gray: sgr(90),
+  accent: (s: string) => esc(ACCENT, s),
+  /** selected menu row: subtle background + bold accent */
+  hl: (s: string) => esc(`48;5;237;1;${ACCENT}`, s),
+};
+export const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+export const visibleLength = (s: string) => stripAnsi(s).length;
 
 export type Prop = { type?: string | string[]; description?: string; enum?: unknown[] };
 export type Schema = { properties?: Record<string, Prop>; required?: string[] };

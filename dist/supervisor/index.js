@@ -87,7 +87,13 @@ export async function startSupervisor(opts) {
         cli: opts.tunnelCli,
     });
     const token = dashboardToken(projectDir);
-    const dash = createDashboard({ projectDir, version: VERSION, token, port: dashboardPort, server, tunnel, log });
+    const stopAll = async () => {
+        await tunnel.stop();
+        await server.stop();
+        await new Promise((r) => dash.close(() => r()));
+        log("supervisor stopped");
+    };
+    const dash = createDashboard({ projectDir, version: VERSION, token, port: dashboardPort, server, tunnel, log, shutdown: () => void stopAll().then(() => process.exit(0)) });
     await new Promise((resolve, reject) => {
         dash.once("error", reject);
         dash.listen(dashboardPort, "127.0.0.1", () => resolve());
@@ -107,12 +113,7 @@ export async function startSupervisor(opts) {
         token,
         server,
         tunnel,
-        async stop() {
-            await tunnel.stop();
-            await server.stop();
-            await new Promise((r) => dash.close(() => r()));
-            log("supervisor stopped");
-        },
+        stop: stopAll,
     };
 }
 /**

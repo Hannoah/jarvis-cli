@@ -43,3 +43,33 @@ test("cmdline and shortPath", () => {
   assert.equal(shortPath("C:\Users\me\Work\app", "C:\Users\me", 40), "~\Work\app");
   assert.equal(shortPath("/a/very/long/path/name", "/nohome", 8), "…th/name");
 });
+
+test("visibleLength ignores colour codes", async () => {
+  const { visibleLength, stripAnsi } = await import("../src/cliutil.js");
+  const E = String.fromCharCode(27);
+  assert.equal(visibleLength(`${E}[1m${E}[38;5;75mab${E}[0m`), 2);
+  assert.equal(stripAnsi(`${E}[2Kx`), "x");
+});
+
+test("ask: live suggestions appear under the input while typing and are cleared on submit", async () => {
+  const { ask } = await import("../src/tui.js");
+  const input = Object.assign(new PassThrough(), { isTTY: true, setRawMode() { return this; } });
+  const output = Object.assign(new PassThrough(), { isTTY: true, columns: 80 });
+  let written = "";
+  output.on("data", (d: Buffer) => (written += d.toString()));
+  const p = ask("> ", { suggest: (l) => (l.startsWith("/st") ? [{ label: "/status", hint: "State of things", value: 1 }] : []) }, { input: input as never, output: output as never });
+  setImmediate(() => input.write("/st"));
+  await new Promise((r) => setTimeout(r, 60));
+  assert.ok(written.includes("/status") && written.includes("State of things"), "suggestion painted");
+  const at = written.indexOf("State of things");
+  input.write("\r");
+  assert.equal(await p, "/st");
+  assert.ok(written.lastIndexOf(`${String.fromCharCode(27)}[0J`) > at, "cleared after Enter");
+});
+
+test("withSpinner is transparent when stderr is not a terminal", async () => {
+  const { withSpinner } = await import("../src/tui.js");
+  const out = new PassThrough() as unknown as NodeJS.WriteStream; // isTTY undefined
+  assert.equal(await withSpinner("x", Promise.resolve(42), out), 42);
+  await assert.rejects(withSpinner("x", Promise.reject(new Error("boom")), out), /boom/);
+});

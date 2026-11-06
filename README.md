@@ -40,7 +40,7 @@ npm install -g https://github.com/Hannoah/jarvis-cli/archive/refs/heads/main.tar
 jarvis version
 ```
 
-빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 같은 명령을 다시 실행하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.3.0.tar.gz`처럼 태그를 지정하세요.
+빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 같은 명령을 다시 실행하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.4.0.tar.gz`처럼 태그를 지정하세요.
 
 > `npm install -g github:Hannoah/jarvis-cli` 형태는 쓰지 마세요. npm 11에서 전역 설치 시 임시 폴더로 링크가 걸려 실행이 깨집니다.
 
@@ -121,7 +121,12 @@ jarvis run_terminal "Get-Date -Format o"
 - **`/tools`:** 카테고리 → 도구를 고르면 파라미터를 하나씩 물어보고, 선택 항목은 메뉴에서 추가한 뒤 `▶ Run`으로 실행합니다. 실행 전에 같은 동작의 한 줄 명령(`→ read_file --path ...`)을 보여줍니다.
 - **`!명령`:** Claude Code의 bash 모드처럼 `!git status`는 `run_terminal`로 셸 명령을 실행합니다(샌드박스·명령 정책 동일 적용).
 - **`clear`:** 슬래시 없이 `clear`(또는 `cls`)로 화면을 지웁니다. `help`, `exit`도 슬래시 없이 됩니다. Ctrl+L도 됩니다.
-- **입력창 위 안내 줄:** 입력창 바로 위에 주요 명령(`/ menu · /help · /status · …`)이 항상 표시됩니다.
+- **상태 줄과 안내 줄:** 입력창 위에 현재 폴더, MCP 서버 실행 여부(● 실행 중 / ○ 중지), 접근 정책(`allowlist`, `write off` 등)이 매번 갱신되어 표시되고, 그 아래에 주요 명령이 항상 보입니다.
+- **입력 중 자동 제안:** `/`나 도구 이름 일부(두 글자 이상)를 입력하면 아래에 일치하는 명령·도구가 설명과 함께 나타나고, `read_file `처럼 도구 이름 뒤에 공백을 넣으면 그 도구의 사용법이 나타납니다. Tab으로 완성합니다.
+- **메뉴 패널:** 둥근 테두리 패널에서 ↑↓로 이동하고, 글자를 입력하면 필터링되며, 항목이 많으면 `↑ n more`/`↓ n more`와 현재 위치(`3/19`)를 보여줍니다. PgUp/PgDn/Home/End도 됩니다.
+- **실행 표시:** 도구가 0.25초 넘게 걸리면 스피너와 경과 시간이 나오고, 끝나면 `✔ read_file · 18ms`처럼 결과 줄이 붙습니다. 터미널 제목에도 현재 폴더가 표시됩니다.
+- **시작 화면:** 버전, 폴더, 도구 수, 승인 폴더 수, 정책, MCP 상태와 함께 매번 다른 사용 팁이 나옵니다.
+- **색상:** 24비트 색을 지원하는 터미널(Windows Terminal, VS Code 등)에서는 강조색을 24비트로, 그 외에는 256색으로 표시합니다. `NO_COLOR=1`이면 끕니다. `jarvis list`는 터미널에서 카테고리별로 묶어 보여줍니다.
 
 슬래시 명령 (Claude Code와 같은 이름을 우선 사용):
 
@@ -131,11 +136,13 @@ jarvis run_terminal "Get-Date -Format o"
 | `/clear` | 화면 지우기 |
 | `/status` | 버전, 작업 폴더, 허용 폴더, 접근 정책, MCP 서버 실행 여부 (`/env`도 같음) |
 | `/doctor` | Node, PowerShell, git, devtunnel, kubectl 등 준비 상태 점검 |
-| `/permissions` | 허용 폴더와 터미널 정책 전체 보기 |
-| `/add-dir <폴더>` | 이번 세션에 한해 허용 폴더 추가 (영구 적용은 `PC_MCP_ALLOWED_DIRS`) |
+| `/permissions` | 읽기·쓰기·터미널 스위치와 터미널 모드를 메뉴로 켜고 끄기 (바로 저장) |
+| `/dirs` | 승인된 폴더 목록·추가·제거 (바로 저장). `/add-dir <폴더>`는 추가의 단축형 |
+| `/allowlist` | 터미널 허용 명령 목록·추가·제거·검사 (바로 저장) |
+| `/mcp` | MCP 연결 정보(주소, API 키, 클라이언트 설정) 보기와 복사 |
+| `/start` `/stop` `/restart` | MCP 서버(+터널+대시보드)를 백그라운드로 실행 / 종료 / 서버 재시작 |
 | `/config` | 설정 파일 보기(API 키 등은 `********`로 가림), `/config edit`로 편집기 열기 |
 | `/memory` | 위키 메모리 색인 |
-| `/mcp` | MCP 서버 주소·대시보드·시작 방법 |
 | `/tools` | 카테고리 → 도구 선택 → 파라미터 폼 |
 | `/list [필터]` | 도구 목록 |
 | `/cd [폴더]` | 작업 폴더 변경 (허용 폴더 안에서만) |
@@ -149,8 +156,14 @@ jarvis run_terminal "Get-Date -Format o"
 
 AI 클라이언트(Copilot Studio, Claude, Cursor 등)가 내 PC의 도구를 쓰게 하려면 서버를 띄웁니다.
 
+### 실행과 종료
+
 ```
-jarvis start                # MCP 서버 + Dev Tunnel + 웹 대시보드를 감시·자동 복구하며 실행 (Ctrl+C로 종료)
+jarvis start -d             # 백그라운드로 실행: 터미널이 비어 있음 (--background도 가능)
+jarvis start                # 포그라운드로 실행: MCP 서버 + Dev Tunnel + 웹 대시보드를 감시·자동 복구 (Ctrl+C로 종료)
+jarvis status               # 감시 프로세스, MCP 서버(PID·가동 시간), 터널 상태
+jarvis restart              # MCP 서버만 재시작 (저장한 설정을 반영할 때)
+jarvis stop                 # MCP 서버·터널·대시보드를 모두 종료
 jarvis start --no-tunnel    # 터널 없이 (로컬에서만 접속)
 jarvis start --no-open      # 대시보드를 브라우저로 열지 않음
 jarvis serve                # MCP 서버만 127.0.0.1에 실행 (감시·터널 없음)
@@ -159,12 +172,55 @@ jarvis install              # 로그인할 때 자동 시작 (작업 스케줄�
 jarvis uninstall
 ```
 
+`jarvis` 입력창 안에서는 `/start`, `/stop`, `/restart`, `/status`로 같은 일을 합니다. `stop`·`restart`·`status`는 실행 중인 감시 프로세스의 대시보드 API를 통해 동작하며, 대시보드 토큰은 설정 폴더의 `.dashboard_token`을 사용합니다.
+
+### MCP 연결 정보
+
+```
+jarvis mcp                   # HTTPS 주소(터널), 로컬 주소, API 키(일부만 표시), 인증 방식, OAuth 정보
+jarvis mcp key               # API 키 전체 출력 (화면에 노출됨에 주의)
+jarvis mcp copy url|key      # 클립보드로 복사 (화면에 출력하지 않음)
+jarvis mcp config claude     # Claude Code 등록 명령 (키는 <API_KEY> 자리표시자)
+jarvis mcp config cursor     # Cursor mcp.json 설정
+jarvis mcp copy claude       # 키를 포함한 설정을 클립보드로 복사
+jarvis mcp rotate --yes      # API 키 재발급 (기존 클라이언트는 모두 새 키로 바꿔야 함)
+```
+
+- 인증은 `X-API-Key: <키>` 또는 `Authorization: Bearer <키>` 헤더입니다.
+- Copilot Studio처럼 OAuth 2.0(수동)을 쓰는 곳에는 `jarvis mcp`가 보여주는 값을 넣습니다. 클라이언트 ID는 `pc-mcp-client`, 클라이언트 시크릿은 API 키이고, authorize/token 주소는 터널 주소 아래 `/oauth/authorize`, `/oauth/token`입니다.
+- 입력창에서는 `/mcp`만 입력하면 현재 정보를 보여준 뒤 복사·재발급 메뉴가 열립니다.
+
+### 승인 폴더·접근 권한·허용 명령
+
+변경은 설정 파일에 바로 저장되고 현재 입력창에도 즉시 반영됩니다. 이미 실행 중인 MCP 서버에는 `jarvis restart` 후 적용됩니다. 입력 검증은 대시보드와 같은 코드를 씁니다.
+
+```
+jarvis dirs                          # 승인된 폴더 목록
+jarvis dirs add <폴더>               # 폴더 승인 (드라이브 루트나 없는 폴더는 거부)
+jarvis dirs remove <폴더>            # 승인 해제 (마지막 하나는 지울 수 없음)
+
+jarvis permissions                   # 읽기·쓰기·터미널·터미널 모드 현재 상태
+jarvis permissions write off         # read | write | terminal 을 on | off
+jarvis permissions mode blocklist --yes   # allowlist(기본, 안전) | blocklist(--yes 필요)
+
+jarvis allowlist                     # 기본 허용 명령 수와 내가 추가한 명령
+jarvis allowlist add <명령...>       # 허용 명령 추가 (powershell·cmd 같은 범용 실행기는 --yes 필요)
+jarvis allowlist remove <명령...>    # 내가 추가한 명령 제거 (기본 허용 명령은 제거 불가)
+jarvis allowlist check "git status"  # 실제 정책으로 검사만 하기 (실행하지 않음, 감사 로그에도 남기지 않음)
+```
+
+입력창에서는 `/dirs`, `/permissions`, `/allowlist`를 인자 없이 입력하면 현재 상태 아래에 메뉴가 열립니다(항목 선택으로 토글·추가·제거).
+
+> 이 설정은 Jarvis를 쓰는 사람이 직접 바꾸는 것입니다. AI 도구는 설정 파일을 읽거나 쓸 수 없습니다.
+
+### 참고
+
 - 포트: MCP `8765`(`/mcp`, API 키 필요), 대시보드 `8766`(이 PC에서만 접속, 토큰 보호). 둘 다 `127.0.0.1`에만 바인딩합니다.
 - 이미 실행 중이면 오류 대신 기존 대시보드를 열어 줍니다.
 - 외부 접속은 [Dev Tunnel](https://learn.microsoft.com/azure/developer/dev-tunnels/) CLI(`devtunnel`)를 씁니다. 없으면 Windows에서는 winget으로 설치를 시도합니다.
 - 서버 설정·API 키·OAuth 토큰·로그는 설정 폴더(`~/.jarvis`)에 저장됩니다. **jarvis-ts를 이미 쓰고 있다면** 키와 터널 주소가 새로 만들어지지 않도록 같은 폴더를 가리키세요.
   ```powershell
-  $env:JARVIS_HOME = "C:\path	o\jarvis-ts\data"   # 영구 적용: setx JARVIS_HOME ...
+  $env:JARVIS_HOME = "C:\path\to\jarvis-ts\data"   # 영구 적용: setx JARVIS_HOME ...
   ```
 - jarvis-ts와 **동시에** 실행하면 같은 포트(8765/8766)를 쓰므로 한쪽만 실행하세요.
 - 서버를 외부에 열면 이 PC의 파일·터미널 권한이 API 키 하나로 보호됩니다. 아래 [보안 모델](#보안-모델)의 한계를 꼭 읽으세요.

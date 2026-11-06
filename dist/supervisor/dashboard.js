@@ -308,6 +308,10 @@ export function createDashboard(d) {
                 case "/api/server/restart":
                     await d.server.restart();
                     return json(res, 200, state());
+                case "/api/shutdown":
+                    json(res, 200, { ok: true });
+                    setImmediate(() => d.shutdown?.()); // after the response is flushed
+                    return;
                 case "/api/tunnel/start":
                     void d.tunnel.ensure().catch((e) => d.log(`[tunnel] ${e}`));
                     return json(res, 202, state());

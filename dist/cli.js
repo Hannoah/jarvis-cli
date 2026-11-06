@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { adminCommand, BROAD, row, startBackground, status as liveStatus } from "./admin.js";
 import { c, categorize, cmdline, coerce, errorOf, exitCodeOf, isTTY, parseArgs, propType, render, shortPath, suggest, tokenize, toolHelp, truncate, usage, } from "./cliutil.js";
 import { expandPath, isResolvedPathAllowed, loadConfig, readEnvFile, realResolve } from "./core/config.js";
 import { createCtx } from "./core/context.js";
@@ -21,7 +22,7 @@ import { install, uninstall } from "./system/autostart.js";
 import { enrichEnv, which } from "./system/cliEnv.js";
 import { openDefault } from "./system/platform.js";
 import { portOpen } from "./system/proc.js";
-import { ask, select, SIGINT } from "./tui.js";
+import { ask, select, SIGINT, withSpinner } from "./tui.js";
 const HELP = `${c.bold(`Jarvis CLI ${VERSION}`)}
 
 ${c.dim("Usage")}
@@ -37,6 +38,14 @@ ${c.dim("MCP server")}  (for Copilot Studio, Claude, Cursor, ...)
   jarvis ${c.cyan("serve")}                  only the MCP server on 127.0.0.1 (no supervision, no tunnel)
   jarvis ${c.cyan("open")} | ${c.cyan("url")}              open / print the dashboard URL (with its one-time sign-in token)
   jarvis ${c.cyan("install")} | ${c.cyan("uninstall")}     start automatically at login (Task Scheduler / LaunchAgent / systemd)
+  jarvis ${c.cyan("start")} -d | --background   same as start, but detached: the terminal stays free
+  jarvis ${c.cyan("stop")} | ${c.cyan("restart")} | ${c.cyan("status")}   stop everything · restart the MCP server · show what is running
+  jarvis ${c.cyan("mcp")} [key|config <client>|copy <what>|rotate --yes]   connection info: URLs, API key, client configs
+
+${c.dim("Access control")}  (saved to the settings file; run "jarvis restart" to apply to a running server)
+  jarvis ${c.cyan("dirs")} [add|remove <folder>]       approved folders
+  jarvis ${c.cyan("permissions")} [read|write|terminal on|off | mode allowlist|blocklist]
+  jarvis ${c.cyan("allowlist")} [add|remove <cmd...> | check "<command line>"]
 
 ${c.dim("Arguments")}
   positional      fill required params first:   jarvis read_file notes.txt 1 20
@@ -48,6 +57,9 @@ ${c.dim("Notes")}
   Settings: ~/.jarvis/.env (or JARVIS_HOME). Relative paths are relative to the current folder when it is allowed.
   Exit codes: 0 ok, 1 tool/runtime error, 2 missing arguments. NO_COLOR disables colors.
 `;
+const ENTRY = fileURLToPath(import.meta.url); // this file, for spawning the background supervisor
+let interactive = false; // set by the prompt: adds a per-call status line after each tool result
+const took = (ms) => (ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`);
 function list(tools, rest) {
     const flags = new Set(rest.filter((a) => a.startsWith("--")));
     const q = rest.find((a) => !a.startsWith("--"))?.toLowerCase();
@@ -57,11 +69,20 @@ function list(tools, rest) {
     if (flags.has("--names"))
         return void console.log(shown.map((t) => t.name).join("\n"));
     const w = Math.max(0, ...shown.map((t) => t.name.length));
-    const room = (process.stdout.columns ?? 120) - w - 3;
-    for (const t of shown)
-        console.log(`${c.cyan(t.name.padEnd(w))}  ${c.dim(truncate((t.description ?? "").split("\n")[0], room))}`);
+    const room = (process.stdout.columns ?? 120) - w - 5;
+    const row = (t) => `${c.accent(t.name.padEnd(w))}  ${c.gray(truncate((t.description ?? "").split("\n")[0], room))}`;
+    if (isTTY && !q) {
+        for (const [cat, ts] of categorize(shown)) {
+            console.log(`\n${c.bold(cat)} ${c.gray(`(${ts.length})`)}`);
+            for (const t of ts)
+                console.log(`  ${row(t)}`);
+        }
+    }
+    else
+        for (const t of shown)
+            console.log(row(t));
     if (isTTY)
-        console.log(c.dim(`\n${shown.length} tool${shown.length === 1 ? "" : "s"} · jarvis help <tool>`));
+        console.log(c.gray(`\n${shown.length} tool${shown.length === 1 ? "" : "s"} · jarvis help <tool>`));
     if (!shown.length)
         console.error(c.yellow(`No tool matches '${q}'.`));
 }
@@ -74,7 +95,9 @@ const completion = (shell, names) => shell === "bash"
 }`;
 /** Call a tool and print its result. Returns the process exit code. */
 async function execute(client, tool, args, raw) {
-    const res = await client.callTool({ name: tool.name, arguments: args });
+    const t0 = Date.now();
+    const call = client.callTool({ name: tool.name, arguments: args });
+    const res = await (raw ? call : withSpinner(tool.name, call));
     let code = res.isError ? 1 : 0;
     for (const part of (res.content ?? [])) {
         if (part.type !== "text") {
@@ -96,6 +119,8 @@ async function execute(client, tool, args, raw) {
             console.log(raw ? part.text : render(part.text ?? ""));
         }
     }
+    if (interactive)
+        console.log(`  ${code ? c.red("✖") : c.green("✔")} ${c.gray(`${tool.name} · ${took(Date.now() - t0)}`)}`);
     return code;
 }
 async function run(client, tools, argv, raw) {
@@ -134,6 +159,10 @@ async function shell(client, tools, ctx) {
     const home = os.homedir();
     const cols = () => (process.stdout.columns ?? 80) - 1;
     const hist = []; // newest first
+    const setTitle = () => {
+        if (tty)
+            process.stdout.write(`\x1b]0;Jarvis · ${path.basename(ctx.cfg.defaultWorkdir) || ctx.cfg.defaultWorkdir}\x07`);
+    };
     const needTTY = () => (tty ? false : (console.error(c.red("✖ This needs an interactive terminal.")), true));
     /** Guided form: required params first, then a menu of optional ones with a Run item on top. */
     async function form(tool) {
@@ -220,27 +249,20 @@ async function shell(client, tools, ctx) {
         if (!isResolvedPathAllowed(ctx.cfg, dir))
             return void console.error(c.red(`✖ Outside the allowed folders: ${ctx.cfg.allowedDirs.join(", ")}`));
         ctx.cfg.defaultWorkdir = dir;
+        setTitle();
         process.chdir(dir); // some tools resolve relative paths against the process cwd, others against the workdir: keep both the same
         console.log(c.dim(`working folder: ${dir}`));
     }
     const execTool = async (name, args = {}) => void (await execute(client, tools.find((t) => t.name === name), args, false));
-    const dashPort = () => Number(readEnvFile(ctx.cfg.envFile).JARVIS_DASHBOARD_PORT) || 8766;
-    const row = (k, v) => console.log(`  ${c.dim(k.padEnd(11))}${v}`);
     const maskSecret = (l) => l.replace(/^(\s*[\w.]*(?:KEY|TOKEN|SECRET|PASSWORD)[\w.]*\s*=).+$/i, "$1 ********");
-    const resolveDir = (arg) => realResolve(path.resolve(ctx.cfg.defaultWorkdir, expandPath(unquote(arg), home, process.env)));
-    const isDir = (d) => fs.existsSync(d) && fs.statSync(d).isDirectory();
     async function status() {
         const cfg = ctx.cfg;
-        const [mcpUp, dashUp] = await Promise.all([portOpen(cfg.port), portOpen(dashPort())]);
-        const state = (b) => (b ? c.green("running") : c.dim("stopped"));
         row("version", VERSION);
         row("folder", cfg.defaultWorkdir);
         row("settings", cfg.dataDir);
         row("allowed", cfg.allowedDirs.join("; "));
         row("access", `read ${cfg.enableRead ? "on" : "off"} · write ${cfg.enableWrite ? "on" : "off"} · terminal ${cfg.enableTerminal ? (cfg.allowUnsafe ? "unsafe" : cfg.terminalMode) : "off"}`);
-        row("MCP server", `${state(mcpUp)} on 127.0.0.1:${cfg.port}   dashboard ${state(dashUp)} on :${dashPort()}`);
-        if (!mcpUp)
-            console.log(c.dim("             start it from your shell: jarvis start"));
+        await liveStatus(cfg);
     }
     async function doctor() {
         const line = (good, label, detail = "") => console.log(`  ${good === null ? c.dim("–") : good ? c.green("✔") : c.red("✖")} ${label}${detail ? c.dim(`  ${detail}`) : ""}`);
@@ -262,24 +284,6 @@ async function shell(client, tools, ctx) {
             line(found ? true : null, label, found ?? "not found (optional)");
         }
     }
-    async function addDir(arg) {
-        let target = arg.trim();
-        if (!target && tty) {
-            const a = await ask("  folder to allow for this session: ");
-            if (typeof a !== "string")
-                return;
-            target = a.trim();
-        }
-        if (!target)
-            return void console.error(c.red("✖ Usage: /add-dir <folder>"));
-        const dir = resolveDir(target);
-        if (!isDir(dir))
-            return void console.error(c.red(`✖ Not a folder: ${dir}`));
-        if (isResolvedPathAllowed(ctx.cfg, dir))
-            return void console.log(c.dim("already allowed"));
-        ctx.cfg.allowedDirs.push(dir);
-        console.log(c.green(`✔ allowed for this session: ${dir}`) + c.dim("  (set PC_MCP_ALLOWED_DIRS in /config to keep it)"));
-    }
     async function config(arg) {
         const f = ctx.cfg.envFile;
         if (arg.trim() === "edit") {
@@ -292,16 +296,118 @@ async function shell(client, tools, ctx) {
         console.log(fs.existsSync(f) ? fs.readFileSync(f, "utf8").split(/\r?\n/).map(maskSecret).join("\n").trimEnd() : c.dim("(no settings file yet: defaults in use)"));
         console.log(c.dim("\n  /config edit   open it in your editor (restart the server after changes)"));
     }
-    async function mcp() {
-        const up = await portOpen(ctx.cfg.port);
-        row("MCP server", up ? c.green("running") : c.dim("stopped"));
-        row("endpoint", `http://127.0.0.1:${ctx.cfg.port}/mcp ${c.dim("(Bearer API key)")}`);
-        const pub = readEnvFile(ctx.cfg.envFile).PC_MCP_PUBLIC_URL;
-        if (pub)
-            row("public URL", pub);
-        row("dashboard", `http://127.0.0.1:${dashPort()}  ${c.dim("(jarvis url prints the sign-in link)")}`);
-        console.log(c.dim("\n  jarvis start | serve | open | url | install | uninstall   (run from your shell)"));
+    const confirm = async (question) => (await select(question, [{ label: "No", value: false }, { label: "Yes", value: true }])) === true;
+    // Menus for the admin commands. Each action calls the same adminCommand() as `jarvis dirs|permissions|allowlist|mcp ...`.
+    async function dirsMenu() {
+        for (;;) {
+            const pick = await select("Approved folders (saved immediately)", [
+                { label: "+ Add a folder…", value: "+" },
+                ...ctx.cfg.allowedDirs.map((d) => ({ label: `- ${d}`, hint: "Enter removes it", value: d })),
+                { label: "Done", value: "" },
+            ]);
+            if (!pick)
+                return;
+            if (pick === "+") {
+                const a = await ask("  folder: ");
+                if (typeof a === "string" && a.trim())
+                    await adminCommand("dirs", ["add", a.trim()], ctx.cfg);
+            }
+            else if (await confirm(`Remove ${pick}?`))
+                await adminCommand("dirs", ["remove", pick], ctx.cfg);
+        }
     }
+    async function allowMenu() {
+        for (;;) {
+            const pick = await select("Allowed terminal commands (saved immediately)", [
+                { label: "+ Add a command…", value: "+" },
+                { label: "? Check a command line…", value: "?" },
+                ...[...ctx.cfg.extraAllowedCommands].sort().map((e) => ({ label: `- ${e}`, hint: "added by you · Enter removes it", value: e })),
+                { label: "Done", hint: "built-in commands: jarvis allowlist list --all", value: "" },
+            ]);
+            if (!pick)
+                return;
+            if (pick === "+") {
+                const a = await ask("  command name(s): ");
+                if (typeof a !== "string" || !a.trim())
+                    continue;
+                const names = a.trim().split(/[\s,;]+/);
+                const args = ["add", ...names];
+                if (names.some((n) => BROAD.has(n.toLowerCase()))) {
+                    if (!(await confirm("That command can run or launch anything, which defeats the allowlist. Allow it anyway?")))
+                        continue;
+                    args.push("--yes");
+                }
+                await adminCommand("allowlist", args, ctx.cfg);
+            }
+            else if (pick === "?") {
+                const a = await ask("  command line: ");
+                if (typeof a === "string" && a.trim())
+                    await adminCommand("allowlist", ["check", a.trim()], ctx.cfg);
+            }
+            else if (await confirm(`Remove ${pick}?`))
+                await adminCommand("allowlist", ["remove", pick], ctx.cfg);
+        }
+    }
+    async function permissionsMenu() {
+        for (;;) {
+            const cfg = ctx.cfg;
+            const sw = (b) => (b ? "on" : "off");
+            const pick = await select("Permissions (Enter toggles, saved immediately)", [
+                { label: `Read files      ${sw(cfg.enableRead)}`, value: "read" },
+                { label: `Write files     ${sw(cfg.enableWrite)}`, value: "write" },
+                { label: `Terminal        ${sw(cfg.enableTerminal)}`, value: "terminal" },
+                { label: `Terminal mode   ${cfg.terminalMode}`, hint: "allowlist (safe) or blocklist (runs anything not denied)", value: "mode" },
+                { label: "Approved folders…", hint: `${cfg.allowedDirs.length} folders`, value: "dirs" },
+                { label: "Allowed commands…", hint: `${cfg.extraAllowedCommands.size} added by you`, value: "allow" },
+                { label: "Done", value: "" },
+            ]);
+            if (!pick)
+                return;
+            if (pick === "dirs")
+                await dirsMenu();
+            else if (pick === "allow")
+                await allowMenu();
+            else if (pick === "mode") {
+                const next = cfg.terminalMode === "allowlist" ? "blocklist" : "allowlist";
+                if (next === "blocklist" && !(await confirm("Blocklist mode lets the terminal run any command that is not on a short deny list. Switch?")))
+                    continue;
+                await adminCommand("permissions", ["mode", next, "--yes"], cfg);
+            }
+            else {
+                const cur = pick === "read" ? cfg.enableRead : pick === "write" ? cfg.enableWrite : cfg.enableTerminal;
+                await adminCommand("permissions", [pick, cur ? "off" : "on"], cfg);
+            }
+        }
+    }
+    async function mcpMenu() {
+        for (;;) {
+            const pick = await select("MCP connection", [
+                { label: "Copy URL", hint: "HTTPS if the tunnel is up, else local", value: ["copy", "url"] },
+                { label: "Copy API key", value: ["copy", "key"] },
+                { label: "Show API key", hint: "prints the secret on screen", value: ["key"] },
+                { label: "Copy Claude Code command", hint: "includes the key", value: ["copy", "claude"] },
+                { label: "Copy Cursor config", hint: "includes the key", value: ["copy", "cursor"] },
+                { label: "Rotate API key…", hint: "every connected client must be updated", value: ["rotate"] },
+                { label: "Done", value: [] },
+            ]);
+            if (!pick?.length)
+                return;
+            if (pick[0] === "rotate") {
+                if (!(await confirm("Rotate the API key? The current one stops working.")))
+                    continue;
+                pick.push("--yes");
+            }
+            await adminCommand("mcp", pick, ctx.cfg);
+        }
+    }
+    /** `/name args` runs the command; bare `/name` in a terminal shows the current state and opens its menu. */
+    const adminSlash = (name, menu) => async (a) => {
+        const args = tokenize(a);
+        if (args.length || !tty)
+            return void (await adminCommand(name, args, ctx.cfg));
+        await adminCommand(name, [], ctx.cfg);
+        await menu();
+    };
     // Names follow Claude Code where there is an equivalent (/help /clear /status /doctor /permissions /add-dir /config /memory /mcp /exit).
     const slash = {
         "/help": {
@@ -311,6 +417,8 @@ async function shell(client, tools, ctx) {
                 "  !<command>       run a shell command through run_terminal, e.g.  !git status",
                 "  /                command menu (↑↓ + Enter, type to filter)",
                 "  /tools           pick a tool and fill in its parameters step by step",
+                "  /mcp /dirs /permissions /allowlist   connection info · approved folders · access switches · command allowlist",
+                "  /start /stop /restart                run / stop / restart the MCP server in the background",
                 "  clear            clear the screen (also /clear, Ctrl+L)",
                 "  Tab              completes tool names, --options and /commands",
                 "  ↑ / ↓            previous commands · Ctrl+C twice, Ctrl+D or /exit to quit",
@@ -323,11 +431,16 @@ async function shell(client, tools, ctx) {
         "/clear": { hint: "Clear the screen", run: async () => void console.clear() },
         "/status": { hint: "Version, folder, access policy and MCP server state", run: status },
         "/doctor": { hint: "Check Node, PowerShell, git, devtunnel and other prerequisites", run: doctor },
-        "/permissions": { hint: "Allowed folders and terminal policy in full (get_pc_env)", run: async () => execTool("get_pc_env") },
-        "/add-dir": { hint: "Allow one more folder for this session: /add-dir <folder>", run: addDir },
         "/config": { hint: "Show the settings file (secrets masked); /config edit opens it", run: config },
         "/memory": { hint: "Wiki memory index (wiki_index)", run: async () => execTool("wiki_index") },
-        "/mcp": { hint: "MCP server endpoint, dashboard and how to start it", run: mcp },
+        "/dirs": { hint: "Approved folders: list, add, remove (saved)", run: adminSlash("dirs", dirsMenu) },
+        "/add-dir": { hint: "Approve a folder (saved): /add-dir <folder>", run: async (a) => void (await adminCommand("dirs", ["add", ...tokenize(a)], ctx.cfg)) },
+        "/permissions": { hint: "Read/write/terminal switches and terminal mode (menu)", run: adminSlash("permissions", permissionsMenu) },
+        "/allowlist": { hint: "Terminal command allowlist: list, add, remove, check", run: adminSlash("allowlist", allowMenu) },
+        "/mcp": { hint: "MCP connection info: URLs, API key, client configs", run: adminSlash("mcp", mcpMenu) },
+        "/start": { hint: "Start the MCP server, tunnel and dashboard in the background", run: async () => void (await startBackground(ctx.cfg, ENTRY, [])) },
+        "/stop": { hint: "Stop the MCP server, tunnel and dashboard", run: async () => void (await adminCommand("stop", [], ctx.cfg)) },
+        "/restart": { hint: "Restart the MCP server (applies saved settings)", run: async () => void (await adminCommand("restart", [], ctx.cfg)) },
         "/tools": { hint: "Browse tools by category and run one with a guided form", run: browse },
         "/list": { hint: "List tools, optionally filtered: /list git", run: async (a) => list(tools, a ? [a] : []) },
         "/cd": { hint: "Show or change the working folder (must be inside an allowed folder)", run: cd },
@@ -388,24 +501,66 @@ async function shell(client, tools, ctx) {
                 break;
         return;
     }
+    interactive = true;
+    setTitle();
+    const TIPS = [
+        "Type / for the command menu, or just start typing a tool name.",
+        "!git status runs a shell command through the same sandbox and policy.",
+        "/tools walks you through any tool's parameters, step by step.",
+        "/permissions toggles read, write and terminal access in one menu.",
+        "/mcp shows the URL and API key for Copilot Studio, Claude and Cursor.",
+        "Tab completes tool names, --options and slash commands.",
+        "/doctor checks that git, PowerShell and devtunnel are installed.",
+        "/dirs approves another folder without editing any file.",
+        "/start runs the MCP server in the background; /stop ends it.",
+    ];
+    const policy = () => (ctx.cfg.enableTerminal ? (ctx.cfg.allowUnsafe ? "unsafe" : ctx.cfg.terminalMode) : "terminal off");
+    const mcpUp0 = await portOpen(ctx.cfg.port);
     const box = [
-        `◆ Jarvis ${VERSION}`,
-        `  folder  ${shortPath(ctx.cfg.defaultWorkdir, home, 60)}`,
-        `  ${tools.length} tools · ${ctx.cfg.allowedDirs.length} allowed folders · terminal: ${ctx.cfg.allowUnsafe ? "unsafe" : ctx.cfg.terminalMode}`,
+        `◆ Jarvis  v${VERSION}`,
+        `  ${shortPath(ctx.cfg.defaultWorkdir, home, 60)}`,
+        `  ${tools.length} tools · ${ctx.cfg.allowedDirs.length} folder${ctx.cfg.allowedDirs.length === 1 ? "" : "s"} · ${policy()} · MCP ${mcpUp0 ? "● running" : "○ stopped"}`,
     ];
     const w = Math.max(...box.map((l) => l.length));
-    console.log(c.cyan(`╭${"─".repeat(w + 2)}╮`));
-    for (const l of box)
-        console.log(c.cyan("│") + ` ${l.padEnd(w)} ` + c.cyan("│"));
-    console.log(c.cyan(`╰${"─".repeat(w + 2)}╯`));
-    console.log(c.dim(" Type a tool name to run it, !command for the shell · / for the command menu · /help · Ctrl+C twice to quit\n"));
+    const paint = (l, i) => i === 0 ? c.bold(c.accent(l)) : i === 1 ? c.gray(l) : l.replace(/MCP (●|○) (running|stopped)/, (_m, d, st) => `MCP ${d === "●" ? c.green(d) : c.gray(d)} ${st}`);
+    console.log(c.accent(`╭${"─".repeat(w + 2)}╮`));
+    box.forEach((l, i) => console.log(`${c.accent("│")} ${paint(l.padEnd(w), i)} ${c.accent("│")}`));
+    console.log(c.accent(`╰${"─".repeat(w + 2)}╯`));
+    console.log(c.gray(truncate(` tip: ${TIPS[Math.floor(Math.random() * TIPS.length)]}`, cols())) + "\n");
+    /** Live suggestions under the input: slash commands, tool names, or the usage of the tool being typed. */
+    const suggestFor = (line) => {
+        const t = line.trimStart();
+        if (!t || t.startsWith("!"))
+            return [];
+        const [first = ""] = t.split(/\s+/);
+        if (/\s/.test(t)) {
+            const tool = tools.find((x) => x.name === first);
+            return tool ? [{ label: usage(tool.name, tool.inputSchema).replace(/^jarvis /, ""), value: null }] : [];
+        }
+        if (first.startsWith("/"))
+            return Object.entries(slash).filter(([k]) => k.startsWith(first) && k !== first).map(([k, v]) => ({ label: k, hint: v.hint, value: k }));
+        if (first.length < 2)
+            return [];
+        const n = first.toLowerCase();
+        return tools
+            .filter((x) => x.name.includes(n) && x.name !== first)
+            .sort((a, b) => Number(b.name.startsWith(n)) - Number(a.name.startsWith(n)))
+            .map((x) => ({ label: x.name, hint: (x.description ?? "").split("\n")[0], value: x.name }));
+    };
     let armed = false; // first Ctrl+C only warns
     for (;;) {
-        const label = ` ${shortPath(ctx.cfg.defaultWorkdir, home, Math.max(10, cols() - 8))} `;
-        console.log(c.dim("──" + label + "─".repeat(Math.max(0, cols() - label.length - 2))));
+        // status line: folder on the left, MCP server and access policy on the right
+        const up = await portOpen(ctx.cfg.port);
+        const left = `── ${shortPath(ctx.cfg.defaultWorkdir, home, Math.max(10, cols() - 44))} `;
+        const bits = [policy(), ...(ctx.cfg.enableWrite ? [] : ["write off"]), ...(ctx.cfg.enableRead ? [] : ["read off"])].join(" · ");
+        const right = `${up ? "running" : "stopped"} · ${bits} ──`;
+        const fill = cols() - 3 - left.length - right.length - " MCP ● ".length; // 3 spare columns: East Asian terminals draw …, · and ● two cells wide
+        console.log(fill >= 2
+            ? c.gray(left + "─".repeat(fill) + " MCP ") + (up ? c.green("●") : c.gray("○")) + c.gray(` ${right}`)
+            : c.gray(left + "─".repeat(Math.max(0, cols() - left.length))));
         // hint line above the input: readline wipes everything below the cursor on every redraw, so it cannot live under it
-        console.log(c.dim(truncate("/ menu · /help · /status · /tools · /doctor · /clear · !shell · /exit", cols())));
-        const line = await ask(c.green("❯ "), { history: hist, completer });
+        console.log(c.gray(truncate("/ menu · /help · /status · /mcp · /permissions · /start · /stop · /exit", cols())));
+        const line = await ask(c.accent("❯ "), { history: hist, completer, suggest: suggestFor });
         if (line === null)
             break;
         if (line === SIGINT) {
@@ -424,7 +579,7 @@ async function shell(client, tools, ctx) {
     }
 }
 // ---------- MCP server (ported from jarvis-ts: server + Dev Tunnel + dashboard) ----------
-const SERVER_CMDS = ["start", "serve", "open", "url", "install", "uninstall"];
+const SERVER_CMDS = ["start", "serve", "open", "url", "install", "uninstall", "status", "stop", "restart", "dirs", "permissions", "allowlist", "mcp"];
 /** Returns an exit code, or undefined when the process should keep running (server / supervisor). */
 async function serverCommand(cmd, argv) {
     const { dataDir } = prepareDataDir();
@@ -440,6 +595,15 @@ async function serverCommand(cmd, argv) {
         case "serve":
             await import("./main.js");
             return undefined;
+        case "status":
+        case "stop":
+        case "restart":
+        case "dirs":
+        case "permissions":
+        case "allowlist":
+        case "mcp":
+            process.exitCode = await adminCommand(cmd, argv.slice(1), loadConfig({ projectDir: appDir, dataDir }));
+            return undefined; // let the event loop drain: process.exit() right after network calls can crash on Windows
         case "open":
         case "url": {
             const url = dashboardUrl();
@@ -460,6 +624,10 @@ async function serverCommand(cmd, argv) {
         }
         default: {
             // start
+            if (flag("-d") || flag("--background")) {
+                process.exitCode = await startBackground(loadConfig({ projectDir: appDir, dataDir }), ENTRY, flag("--no-tunnel") ? ["--no-tunnel"] : []);
+                return undefined;
+            }
             installFatalHandlers("supervisor");
             let sup;
             try {

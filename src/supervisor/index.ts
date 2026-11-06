@@ -106,7 +106,13 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<RunningS
   });
 
   const token = dashboardToken(projectDir);
-  const dash = createDashboard({ projectDir, version: VERSION, token, port: dashboardPort, server, tunnel, log });
+  const stopAll = async () => {
+    await tunnel.stop();
+    await server.stop();
+    await new Promise<void>((r) => dash.close(() => r()));
+    log("supervisor stopped");
+  };
+  const dash = createDashboard({ projectDir, version: VERSION, token, port: dashboardPort, server, tunnel, log, shutdown: () => void stopAll().then(() => process.exit(0)) });
   await new Promise<void>((resolve, reject) => {
     dash.once("error", reject);
     dash.listen(dashboardPort, "127.0.0.1", () => resolve());
@@ -127,12 +133,7 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<RunningS
     token,
     server,
     tunnel,
-    async stop() {
-      await tunnel.stop();
-      await server.stop();
-      await new Promise<void>((r) => dash.close(() => r()));
-      log("supervisor stopped");
-    },
+    stop: stopAll,
   };
 }
 

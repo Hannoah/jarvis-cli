@@ -28,6 +28,8 @@ export interface DashboardDeps {
   server: Service;
   tunnel: Tunnel;
   log(msg: string): void;
+  /** Ends the whole supervisor (server, tunnel, dashboard); used by `jarvis stop`. */
+  shutdown?: () => void;
 }
 
 const LOG_FILES: Record<string, string[]> = {
@@ -341,6 +343,10 @@ export function createDashboard(d: DashboardDeps): Server {
         case "/api/server/restart":
           await d.server.restart();
           return json(res, 200, state());
+        case "/api/shutdown":
+          json(res, 200, { ok: true });
+          setImmediate(() => d.shutdown?.()); // after the response is flushed
+          return;
         case "/api/tunnel/start":
           void d.tunnel.ensure().catch((e) => d.log(`[tunnel] ${e}`));
           return json(res, 202, state());

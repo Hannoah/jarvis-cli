@@ -1,16 +1,18 @@
-// Tiny terminal UI: an arrow-key menu with type-to-filter, and a one-line prompt with history. No dependencies.
-// The prompt creates (and closes) a readline per call so the menu can own the keyboard in between.
+// Tiny terminal UI, no dependencies: an arrow-key menu panel with type-to-filter, a spinner, and a one-line prompt with
+// history and live suggestions. The prompt creates (and closes) a readline per call so the menu can own the keyboard in between.
 import readline from "node:readline";
-import { c, truncate } from "./cliutil.js";
+import { c, truncate, visibleLength } from "./cliutil.js";
 export const SIGINT = Symbol("sigint");
 const stdio = () => ({ input: process.stdin, output: process.stdout });
+const MAX = 10;
+const pad = (s, n) => s + " ".repeat(Math.max(0, n - s.length));
 /** Resolves to the chosen value, or undefined on Esc / Ctrl+C. */
 export function select(title, items, io = stdio()) {
     const { input, output } = io;
     readline.emitKeypressEvents(input);
     input.setRawMode?.(true);
     input.resume();
-    const MAX = 10;
+    output.write("\x1b[?25l"); // hide the cursor while the panel is up
     let q = "", idx = 0, drawn = 0;
     const visible = () => items.filter((i) => `${i.label} ${i.hint ?? ""}`.toLowerCase().includes(q.toLowerCase()));
     const draw = () => {
@@ -18,15 +20,22 @@ export function select(title, items, io = stdio()) {
         const f = visible();
         idx = Math.max(0, Math.min(idx, f.length - 1));
         const start = Math.max(0, Math.min(idx - 4, f.length - MAX));
-        const rows = f.slice(start, start + MAX).map((it, i) => {
-            const hint = it.hint ? "  " + truncate(it.hint, Math.max(4, cols - 2 - it.label.length - 2)) : "";
-            return start + i === idx ? c.cyan(`❯ ${it.label}`) + c.dim(hint) : `  ${it.label}` + c.dim(hint);
+        const shown = f.slice(start, start + MAX);
+        const labelW = Math.min(30, Math.max(0, ...shown.map((it) => it.label.length)));
+        const bar = c.accent("│") + " ";
+        const body = shown.map((it, i) => {
+            const room = cols - 2 - 2 - labelW - 2;
+            const hint = it.hint && room >= 8 ? "  " + truncate(it.hint, room) : "";
+            const text = `${pad(it.label, labelW)}${hint}`;
+            return bar + (start + i === idx ? c.hl(pad(`❯ ${text}`, cols - 2)) : `  ${it.label.length > labelW ? text : pad(it.label, labelW)}` + c.gray(hint));
         });
-        const help = q ? `  filter: ${q}` : "  type to filter · ↑↓ · Enter · Esc";
         const lines = [
-            c.bold(truncate(title, cols)) + c.dim(truncate(help, Math.max(0, cols - title.length))),
-            ...rows,
-            ...(!f.length ? [c.dim("  no match")] : f.length > MAX ? [c.dim(`  ${idx + 1}/${f.length}`)] : []),
+            c.accent("╭─ ") + c.bold(truncate(title, cols - 4)) + c.gray(truncate(q ? `  ·  filter: ${q}▏` : "  ·  type to filter", Math.max(0, cols - title.length - 4))),
+            ...(start > 0 ? [bar + c.gray(`↑ ${start} more`)] : []),
+            ...body,
+            ...(start + MAX < f.length ? [bar + c.gray(`↓ ${f.length - start - MAX} more`)] : []),
+            ...(!f.length ? [bar + c.gray("no match")] : []),
+            c.accent("╰─ ") + c.gray(truncate(`↑↓ move · Enter select · Esc cancel${f.length > MAX ? `  ·  ${idx + 1}/${f.length}` : ""}`, cols - 4)),
         ];
         if (drawn)
             output.write(`\x1b[${drawn}A\x1b[0J`);
@@ -39,6 +48,7 @@ export function select(title, items, io = stdio()) {
             input.setRawMode?.(false);
             if (drawn)
                 output.write(`\x1b[${drawn}A\x1b[0J`);
+            output.write("\x1b[?25h");
             resolve(v);
         };
         const onKey = (str, key) => {
@@ -59,6 +69,18 @@ export function select(title, items, io = stdio()) {
                 case "down":
                     idx = idx + 1 >= n ? 0 : idx + 1;
                     break;
+                case "pageup":
+                    idx = Math.max(0, idx - MAX);
+                    break;
+                case "pagedown":
+                    idx = Math.min(n - 1, idx + MAX);
+                    break;
+                case "home":
+                    idx = 0;
+                    break;
+                case "end":
+                    idx = Math.max(0, n - 1);
+                    break;
                 case "backspace":
                     q = q.slice(0, -1);
                     idx = 0;
@@ -75,20 +97,81 @@ export function select(title, items, io = stdio()) {
         draw();
     });
 }
-/** One line of input. null = stdin closed (Ctrl+D), SIGINT = Ctrl+C. `history` is newest-first. */
+/** Braille spinner on stderr while `p` is pending. Appears only after 250 ms, so quick calls never flicker; no-op when stderr is not a terminal. */
+export async function withSpinner(label, p, out = process.stderr) {
+    if (!out.isTTY)
+        return p;
+    const frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+    const t0 = Date.now();
+    let i = 0, shown = false, timer;
+    const tick = () => {
+        shown = true;
+        out.write(`\r\x1b[2K${c.accent(frames[i++ % frames.length])} ${label} ${c.gray(`${((Date.now() - t0) / 1000).toFixed(1)}s`)}`);
+    };
+    const start = setTimeout(() => {
+        out.write("\x1b[?25l");
+        tick();
+        timer = setInterval(tick, 90);
+    }, 250);
+    try {
+        return await p;
+    }
+    finally {
+        clearTimeout(start);
+        if (timer)
+            clearInterval(timer);
+        if (shown)
+            out.write("\r\x1b[2K\x1b[?25h");
+    }
+}
+/**
+ * One line of input. null = stdin closed (Ctrl+D), SIGINT = Ctrl+C. `history` is newest-first.
+ * `suggest(line)` is shown live under the input while typing (readline wipes everything below the cursor when it
+ * redraws, so the list is repainted after every key; it is cleared when the line is submitted).
+ */
 export function ask(prompt, opts = {}, io = stdio()) {
     return new Promise((resolve) => {
         const rl = readline.createInterface({ input: io.input, output: io.output, history: opts.history ? [...opts.history] : undefined, historySize: 200, completer: opts.completer });
         let settled = false;
+        let drawn = 0;
+        const col = () => visibleLength(prompt) + (rl.cursor ?? rl.line.length) + 1;
+        const clearBelow = () => {
+            if (!drawn)
+                return;
+            io.output.write(`\x1b[1E\x1b[0J\x1b[1A\x1b[${col()}G`);
+            drawn = 0;
+        };
+        const paint = () => {
+            if (settled || !opts.suggest)
+                return;
+            const items = opts.suggest(rl.line).slice(0, 6);
+            if (!items.length)
+                return clearBelow();
+            const cols = (io.output.columns ?? 100) - 1;
+            const labels = items.map((it) => truncate(it.label, Math.max(8, cols - 4)));
+            const w = Math.min(24, Math.max(...labels.map((l) => l.length)));
+            const lines = items.map((it, i) => {
+                const room = cols - 4 - w - 2;
+                return "  " + c.accent(pad(labels[i], w)) + (it.hint && room >= 8 ? c.gray("  " + truncate(it.hint, room)) : "");
+            });
+            clearBelow();
+            io.output.write("\n" + lines.join("\n") + `\x1b[${lines.length}A\x1b[${col()}G`);
+            drawn = lines.length;
+        };
         const fin = (v) => {
             if (settled)
                 return;
             settled = true;
+            io.input.off("keypress", paint);
+            // after Enter the cursor is already on the first suggestion row; otherwise step down onto it
+            if (drawn)
+                io.output.write(typeof v === "string" ? "\x1b[0J" : "\x1b[1E\x1b[0J");
             rl.close();
             resolve(v);
         };
         rl.on("SIGINT", () => fin(SIGINT));
         rl.on("close", () => fin(null));
+        io.input.on("keypress", paint); // registered after readline's own handler, so rl.line is already up to date
         rl.question(prompt, (a) => fin(a));
     });
 }
