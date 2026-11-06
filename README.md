@@ -39,14 +39,14 @@ npm install -g github:Hannoah/jarvis-cli
 jarvis version
 ```
 
-설치할 때 자동으로 빌드됩니다. 업데이트도 같은 명령을 다시 실행하면 됩니다. 제거는 `npm uninstall -g jarvis-cli`.
+빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트도 같은 명령을 다시 실행하면 됩니다. 제거는 `npm uninstall -g jarvis-cli`.
 
 ### 방법 2 — 소스를 받아서
 
 ```
 git clone https://github.com/Hannoah/jarvis-cli.git
 cd jarvis-cli
-npm install          # 의존성 설치 + 자동 빌드
+npm install          # 의존성 설치 (빌드된 dist/ 포함)
 npm link             # `jarvis` 명령 등록
 ```
 
@@ -152,8 +152,9 @@ PC_MCP_EXTRA_ALLOWED_COMMANDS=Start-Process;Stop-Process
 ## 개발
 
 ```
-npm install        # 의존성 설치 + 빌드
+npm install
 npm run dev -- list      # tsx로 바로 실행
+npm run build      # src → dist (dist/는 커밋 대상이므로 변경 후 반드시 실행)
 npm test           # 인자 파싱·렌더링 단위 테스트
 npm run typecheck
 ```

@@ -1,8 +1,6 @@
-# installed / built
+# installed (dist/ is committed so `npm i -g github:...` needs no build step)
 node_modules/
-dist/
-.e2e-dist/
-
+.e2e-
 # everything Jarvis writes at runtime: settings, API key, logs, backups
 data/
 
