@@ -27,7 +27,7 @@ $ jarvis                               # 대화형 모드 (입력창·/ 메뉴·
 - **사용하기 편한 출력** — 파일 내용은 그대로, 목록은 표, 명령 실행은 stdout/stderr 분리, 색상 지원. 파이프로 넘기면 원문 그대로 나와 스크립트에 쓰기 좋습니다.
 - **대화형 입력창** — `jarvis`만 입력하면 `/` 메뉴와 단계별 도구 폼이 있는 터미널 UI가 열립니다.
 - **셸 친화적** — 위치 인자, 오타 제안(`Did you mean`), 의미 있는 종료 코드, PowerShell/bash 자동 완성.
-- **서버 없음** — 포트·터널·로그인 없이 터미널에서 바로 실행됩니다.
+- **두 가지 사용 방식** — 터미널에서 도구를 직접 실행하거나(서버 불필요), 같은 도구를 **로컬 MCP 서버**(Dev Tunnel + 웹 대시보드)로 띄워 Copilot Studio·Claude·Cursor 같은 AI 클라이언트에 연결할 수 있습니다.
 
 ## 설치
 
@@ -40,7 +40,7 @@ npm install -g https://github.com/Hannoah/jarvis-cli/archive/refs/heads/main.tar
 jarvis version
 ```
 
-빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 같은 명령을 다시 실행하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.2.0.tar.gz`처럼 태그를 지정하세요.
+빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 같은 명령을 다시 실행하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.3.0.tar.gz`처럼 태그를 지정하세요.
 
 > `npm install -g github:Hannoah/jarvis-cli` 형태는 쓰지 마세요. npm 11에서 전역 설치 시 임시 폴더로 링크가 걸려 실행이 깨집니다.
 
@@ -119,9 +119,55 @@ jarvis run_terminal "Get-Date -Format o"
 - **도구 바로 실행:** `read_file notes.txt`, `git_status`, `help read_file` — 한 줄 모드와 같은 문법입니다.
 - **`/` 명령 메뉴:** `/`만 입력하면 메뉴가 열립니다. ↑↓로 이동, 글자를 입력하면 필터링, Enter로 선택, Esc로 취소합니다.
 - **`/tools`:** 카테고리 → 도구를 고르면 파라미터를 하나씩 물어보고, 선택 항목은 메뉴에서 추가한 뒤 `▶ Run`으로 실행합니다. 실행 전에 같은 동작의 한 줄 명령(`→ read_file --path ...`)을 보여줍니다.
-- **슬래시 명령:** `/tools` `/list [필터]` `/cd [폴더]`(허용 폴더 안에서만) `/env` `/help` `/clear` `/exit`
+- **`!명령`:** Claude Code의 bash 모드처럼 `!git status`는 `run_terminal`로 셸 명령을 실행합니다(샌드박스·명령 정책 동일 적용).
+- **`clear`:** 슬래시 없이 `clear`(또는 `cls`)로 화면을 지웁니다. `help`, `exit`도 슬래시 없이 됩니다. Ctrl+L도 됩니다.
+- **입력창 위 안내 줄:** 입력창 바로 위에 주요 명령(`/ menu · /help · /status · …`)이 항상 표시됩니다.
+
+슬래시 명령 (Claude Code와 같은 이름을 우선 사용):
+
+| 명령 | 설명 |
+|---|---|
+| `/help` | 사용법 (셸에서 쓰는 서버 명령 포함) |
+| `/clear` | 화면 지우기 |
+| `/status` | 버전, 작업 폴더, 허용 폴더, 접근 정책, MCP 서버 실행 여부 (`/env`도 같음) |
+| `/doctor` | Node, PowerShell, git, devtunnel, kubectl 등 준비 상태 점검 |
+| `/permissions` | 허용 폴더와 터미널 정책 전체 보기 |
+| `/add-dir <폴더>` | 이번 세션에 한해 허용 폴더 추가 (영구 적용은 `PC_MCP_ALLOWED_DIRS`) |
+| `/config` | 설정 파일 보기(API 키 등은 `********`로 가림), `/config edit`로 편집기 열기 |
+| `/memory` | 위키 메모리 색인 |
+| `/mcp` | MCP 서버 주소·대시보드·시작 방법 |
+| `/tools` | 카테고리 → 도구 선택 → 파라미터 폼 |
+| `/list [필터]` | 도구 목록 |
+| `/cd [폴더]` | 작업 폴더 변경 (허용 폴더 안에서만) |
+| `/version` | 버전 |
+| `/exit` | 종료 (`/quit`, Ctrl+D) |
+
 - **편의:** Tab으로 도구 이름·`--옵션`·`/명령` 완성, ↑↓로 이전 입력, Ctrl+C를 두 번 누르면 종료.
 - 파이프로 명령을 넘기면(`"git_status" | jarvis shell`) 메뉴 없이 한 줄씩 실행합니다.
+
+## MCP 서버로 쓰기
+
+AI 클라이언트(Copilot Studio, Claude, Cursor 등)가 내 PC의 도구를 쓰게 하려면 서버를 띄웁니다.
+
+```
+jarvis start                # MCP 서버 + Dev Tunnel + 웹 대시보드를 감시·자동 복구하며 실행 (Ctrl+C로 종료)
+jarvis start --no-tunnel    # 터널 없이 (로컬에서만 접속)
+jarvis start --no-open      # 대시보드를 브라우저로 열지 않음
+jarvis serve                # MCP 서버만 127.0.0.1에 실행 (감시·터널 없음)
+jarvis open | jarvis url    # 대시보드 열기 / 주소 출력 (로그인 토큰 포함)
+jarvis install              # 로그인할 때 자동 시작 (작업 스케줄러 / LaunchAgent / systemd)
+jarvis uninstall
+```
+
+- 포트: MCP `8765`(`/mcp`, API 키 필요), 대시보드 `8766`(이 PC에서만 접속, 토큰 보호). 둘 다 `127.0.0.1`에만 바인딩합니다.
+- 이미 실행 중이면 오류 대신 기존 대시보드를 열어 줍니다.
+- 외부 접속은 [Dev Tunnel](https://learn.microsoft.com/azure/developer/dev-tunnels/) CLI(`devtunnel`)를 씁니다. 없으면 Windows에서는 winget으로 설치를 시도합니다.
+- 서버 설정·API 키·OAuth 토큰·로그는 설정 폴더(`~/.jarvis`)에 저장됩니다. **jarvis-ts를 이미 쓰고 있다면** 키와 터널 주소가 새로 만들어지지 않도록 같은 폴더를 가리키세요.
+  ```powershell
+  $env:JARVIS_HOME = "C:\path	o\jarvis-ts\data"   # 영구 적용: setx JARVIS_HOME ...
+  ```
+- jarvis-ts와 **동시에** 실행하면 같은 포트(8765/8766)를 쓰므로 한쪽만 실행하세요.
+- 서버를 외부에 열면 이 PC의 파일·터미널 권한이 API 키 하나로 보호됩니다. 아래 [보안 모델](#보안-모델)의 한계를 꼭 읽으세요.
 
 ## 도구 목록
 
@@ -159,6 +205,10 @@ Jarvis는 **PC를 조작하는 도구**입니다. 아래 한계를 알고 쓰세
 # 허용 폴더 (';' 구분, ~ 와 %USERPROFILE% 사용 가능). 비우면 자동 감지.
 PC_MCP_ALLOWED_DIRS=C:\Users\me\Work;C:\Users\me\Documents
 
+# MCP 포트 (기본 8765) / 대시보드 포트 (기본 8766)
+# PC_MCP_PORT=8765
+# JARVIS_DASHBOARD_PORT=8766
+
 PC_MCP_ENABLE_READ=true
 PC_MCP_ENABLE_WRITE=true
 PC_MCP_ENABLE_TERMINAL=true
@@ -179,7 +229,7 @@ npm test           # 인자 파싱·렌더링 단위 테스트
 npm run typecheck
 ```
 
-구조: `src/cli.ts`(진입점·명령) · `src/cliutil.ts`(인자 파싱·렌더링, 테스트 대상) · `src/tui.ts`(메뉴·입력 프롬프트) · `src/tools/*`(도구) · `src/{core,files,security,system}`(설정·샌드박스·정책·백업). CLI는 도구를 MCP 서버 형태로 같은 프로세스 안에서 호출하므로, MCP 서버 구현을 그대로 재사용합니다.
+구조: `src/cli.ts`(진입점·명령) · `src/supervisor/`·`src/server/http.ts`·`src/main.ts`(MCP 서버·터널·대시보드) · `src/cliutil.ts`(인자 파싱·렌더링, 테스트 대상) · `src/tui.ts`(메뉴·입력 프롬프트) · `src/tools/*`(도구) · `src/{core,files,security,system}`(설정·샌드박스·정책·백업). CLI는 도구를 MCP 서버 형태로 같은 프로세스 안에서 호출하므로, MCP 서버 구현을 그대로 재사용합니다.
 
 ## 라이선스
 

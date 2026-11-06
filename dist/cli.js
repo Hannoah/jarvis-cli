@@ -4,16 +4,23 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { c, categorize, cmdline, coerce, errorOf, exitCodeOf, isTTY, parseArgs, propType, render, shortPath, suggest, tokenize, toolHelp, truncate, usage, } from "./cliutil.js";
-import { expandPath, isResolvedPathAllowed, loadConfig, realResolve } from "./core/config.js";
+import { expandPath, isResolvedPathAllowed, loadConfig, readEnvFile, realResolve } from "./core/config.js";
 import { createCtx } from "./core/context.js";
+import { installFatalHandlers } from "./core/fatal.js";
 import { appDir, prepareDataDir } from "./core/paths.js";
 import { VERSION } from "./core/version.js";
 import { createMcpServer } from "./server/mcp.js";
 import { loadPlugins } from "./server/plugins.js";
-import { enrichEnv } from "./system/cliEnv.js";
+import { psExecutable } from "./security/policy.js";
+import { startSupervisor } from "./supervisor/index.js";
+import { install, uninstall } from "./system/autostart.js";
+import { enrichEnv, which } from "./system/cliEnv.js";
+import { openDefault } from "./system/platform.js";
+import { portOpen } from "./system/proc.js";
 import { ask, select, SIGINT } from "./tui.js";
 const HELP = `${c.bold(`Jarvis CLI ${VERSION}`)}
 
@@ -24,6 +31,12 @@ ${c.dim("Usage")}
   jarvis ${c.cyan("help")} <tool>            parameters and usage  (also: jarvis <tool> --help)
   jarvis ${c.cyan("shell")}                  same as plain \`jarvis\` (also reads commands from a pipe)
   jarvis ${c.cyan("completion")} <powershell|bash>   print a completion script
+
+${c.dim("MCP server")}  (for Copilot Studio, Claude, Cursor, ...)
+  jarvis ${c.cyan("start")} [--no-tunnel] [--no-open]   MCP server + Dev Tunnel + web dashboard, supervised (Ctrl+C stops)
+  jarvis ${c.cyan("serve")}                  only the MCP server on 127.0.0.1 (no supervision, no tunnel)
+  jarvis ${c.cyan("open")} | ${c.cyan("url")}              open / print the dashboard URL (with its one-time sign-in token)
+  jarvis ${c.cyan("install")} | ${c.cyan("uninstall")}     start automatically at login (Task Scheduler / LaunchAgent / systemd)
 
 ${c.dim("Arguments")}
   positional      fill required params first:   jarvis read_file notes.txt 1 20
@@ -53,10 +66,10 @@ function list(tools, rest) {
         console.error(c.yellow(`No tool matches '${q}'.`));
 }
 const completion = (shell, names) => shell === "bash"
-    ? `complete -W "list help shell completion ${names.join(" ")}" jarvis`
+    ? `complete -W "list help shell completion ${SERVER_CMDS.join(" ")} ${names.join(" ")}" jarvis`
     : `Register-ArgumentCompleter -Native -CommandName jarvis -ScriptBlock {
   param($word, $ast, $pos)
-  '${["list", "help", "shell", "completion", ...names].join("','")}' -split ',' | Where-Object { $_ -like "$word*" } |
+  '${["list", "help", "shell", "completion", ...SERVER_CMDS, ...names].join("','")}' -split ',' | Where-Object { $_ -like "$word*" } |
     ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }
 }`;
 /** Call a tool and print its result. Returns the process exit code. */
@@ -210,29 +223,123 @@ async function shell(client, tools, ctx) {
         process.chdir(dir); // some tools resolve relative paths against the process cwd, others against the workdir: keep both the same
         console.log(c.dim(`working folder: ${dir}`));
     }
+    const execTool = async (name, args = {}) => void (await execute(client, tools.find((t) => t.name === name), args, false));
+    const dashPort = () => Number(readEnvFile(ctx.cfg.envFile).JARVIS_DASHBOARD_PORT) || 8766;
+    const row = (k, v) => console.log(`  ${c.dim(k.padEnd(11))}${v}`);
+    const maskSecret = (l) => l.replace(/^(\s*[\w.]*(?:KEY|TOKEN|SECRET|PASSWORD)[\w.]*\s*=).+$/i, "$1 ********");
+    const resolveDir = (arg) => realResolve(path.resolve(ctx.cfg.defaultWorkdir, expandPath(unquote(arg), home, process.env)));
+    const isDir = (d) => fs.existsSync(d) && fs.statSync(d).isDirectory();
+    async function status() {
+        const cfg = ctx.cfg;
+        const [mcpUp, dashUp] = await Promise.all([portOpen(cfg.port), portOpen(dashPort())]);
+        const state = (b) => (b ? c.green("running") : c.dim("stopped"));
+        row("version", VERSION);
+        row("folder", cfg.defaultWorkdir);
+        row("settings", cfg.dataDir);
+        row("allowed", cfg.allowedDirs.join("; "));
+        row("access", `read ${cfg.enableRead ? "on" : "off"} · write ${cfg.enableWrite ? "on" : "off"} · terminal ${cfg.enableTerminal ? (cfg.allowUnsafe ? "unsafe" : cfg.terminalMode) : "off"}`);
+        row("MCP server", `${state(mcpUp)} on 127.0.0.1:${cfg.port}   dashboard ${state(dashUp)} on :${dashPort()}`);
+        if (!mcpUp)
+            console.log(c.dim("             start it from your shell: jarvis start"));
+    }
+    async function doctor() {
+        const line = (good, label, detail = "") => console.log(`  ${good === null ? c.dim("–") : good ? c.green("✔") : c.red("✖")} ${label}${detail ? c.dim(`  ${detail}`) : ""}`);
+        line(Number(process.versions.node.split(".")[0]) >= 22, `Node ${process.versions.node}`, "needs 22 or newer");
+        const ps = which([psExecutable()], process.env);
+        line(!!ps, `${psExecutable()}`, ps ?? "required by run_terminal");
+        let writable = true;
+        try {
+            fs.accessSync(ctx.cfg.dataDir, fs.constants.W_OK);
+        }
+        catch {
+            writable = false;
+        }
+        line(writable, "settings folder is writable", ctx.cfg.dataDir);
+        const missing = ctx.cfg.allowedDirs.filter((d) => !fs.existsSync(d));
+        line(!missing.length, "allowed folders exist", missing.join("; "));
+        for (const [label, bins] of [["git", ["git"]], ["devtunnel (external access)", ["devtunnel"]], ["kubectl", ["kubectl"]], ["Azure CLI", ["az"]], ["Power Platform CLI", ["pac"]], ["SAS Viya CLI", ["sas-viya"]]]) {
+            const found = which([...bins], process.env);
+            line(found ? true : null, label, found ?? "not found (optional)");
+        }
+    }
+    async function addDir(arg) {
+        let target = arg.trim();
+        if (!target && tty) {
+            const a = await ask("  folder to allow for this session: ");
+            if (typeof a !== "string")
+                return;
+            target = a.trim();
+        }
+        if (!target)
+            return void console.error(c.red("✖ Usage: /add-dir <folder>"));
+        const dir = resolveDir(target);
+        if (!isDir(dir))
+            return void console.error(c.red(`✖ Not a folder: ${dir}`));
+        if (isResolvedPathAllowed(ctx.cfg, dir))
+            return void console.log(c.dim("already allowed"));
+        ctx.cfg.allowedDirs.push(dir);
+        console.log(c.green(`✔ allowed for this session: ${dir}`) + c.dim("  (set PC_MCP_ALLOWED_DIRS in /config to keep it)"));
+    }
+    async function config(arg) {
+        const f = ctx.cfg.envFile;
+        if (arg.trim() === "edit") {
+            if (!fs.existsSync(f))
+                fs.writeFileSync(f, "# Jarvis settings (see the README for keys)\n", { mode: 0o600 });
+            openDefault(f);
+            return void console.log(c.dim(`opening ${f}`));
+        }
+        console.log(c.dim(f));
+        console.log(fs.existsSync(f) ? fs.readFileSync(f, "utf8").split(/\r?\n/).map(maskSecret).join("\n").trimEnd() : c.dim("(no settings file yet: defaults in use)"));
+        console.log(c.dim("\n  /config edit   open it in your editor (restart the server after changes)"));
+    }
+    async function mcp() {
+        const up = await portOpen(ctx.cfg.port);
+        row("MCP server", up ? c.green("running") : c.dim("stopped"));
+        row("endpoint", `http://127.0.0.1:${ctx.cfg.port}/mcp ${c.dim("(Bearer API key)")}`);
+        const pub = readEnvFile(ctx.cfg.envFile).PC_MCP_PUBLIC_URL;
+        if (pub)
+            row("public URL", pub);
+        row("dashboard", `http://127.0.0.1:${dashPort()}  ${c.dim("(jarvis url prints the sign-in link)")}`);
+        console.log(c.dim("\n  jarvis start | serve | open | url | install | uninstall   (run from your shell)"));
+    }
+    // Names follow Claude Code where there is an equivalent (/help /clear /status /doctor /permissions /add-dir /config /memory /mcp /exit).
     const slash = {
-        "/tools": { hint: "Browse tools by category and run one with a guided form", run: browse },
-        "/list": { hint: "List tools, optionally filtered: /list git", run: async (a) => list(tools, a ? [a] : []) },
-        "/cd": { hint: "Show or change the working folder (must be inside an allowed folder)", run: cd },
-        "/env": { hint: "PC environment, allowed folders and policy", run: async () => void (await execute(client, tools.find((t) => t.name === "get_pc_env"), {}, false)) },
         "/help": {
             hint: "How to use this prompt",
             run: async () => console.log([
                 "  <tool> [args]    run a tool, e.g.  read_file notes.txt   (help <tool> for parameters)",
+                "  !<command>       run a shell command through run_terminal, e.g.  !git status",
                 "  /                command menu (↑↓ + Enter, type to filter)",
                 "  /tools           pick a tool and fill in its parameters step by step",
+                "  clear            clear the screen (also /clear, Ctrl+L)",
                 "  Tab              completes tool names, --options and /commands",
-                "  ↑ / ↓            previous commands · Ctrl+C twice or /exit to quit",
+                "  ↑ / ↓            previous commands · Ctrl+C twice, Ctrl+D or /exit to quit",
+                "",
+                "  From your shell (not this prompt):",
+                "    jarvis start | serve | open | url | install | uninstall    MCP server, tunnel, dashboard",
+                "    jarvis list | help <tool> | completion <powershell|bash>",
             ].map((l) => c.dim(l)).join("\n")),
         },
         "/clear": { hint: "Clear the screen", run: async () => void console.clear() },
-        "/exit": { hint: "Quit", run: async () => "exit" },
+        "/status": { hint: "Version, folder, access policy and MCP server state", run: status },
+        "/doctor": { hint: "Check Node, PowerShell, git, devtunnel and other prerequisites", run: doctor },
+        "/permissions": { hint: "Allowed folders and terminal policy in full (get_pc_env)", run: async () => execTool("get_pc_env") },
+        "/add-dir": { hint: "Allow one more folder for this session: /add-dir <folder>", run: addDir },
+        "/config": { hint: "Show the settings file (secrets masked); /config edit opens it", run: config },
+        "/memory": { hint: "Wiki memory index (wiki_index)", run: async () => execTool("wiki_index") },
+        "/mcp": { hint: "MCP server endpoint, dashboard and how to start it", run: mcp },
+        "/tools": { hint: "Browse tools by category and run one with a guided form", run: browse },
+        "/list": { hint: "List tools, optionally filtered: /list git", run: async (a) => list(tools, a ? [a] : []) },
+        "/cd": { hint: "Show or change the working folder (must be inside an allowed folder)", run: cd },
+        "/version": { hint: "Show the version", run: async () => void console.log(VERSION) },
+        "/exit": { hint: "Quit (also /quit, Ctrl+D)", run: async () => "exit" },
     };
+    const ALIASES = { "/quit": "/exit", "/env": "/status", "/cls": "/clear", "/?": "/help", "/menu": "/" };
     const completer = (line) => {
         const toks = line.split(/\s+/);
         const last = toks.at(-1) ?? "";
         if (toks.length <= 1)
-            return [[...Object.keys(slash), "list", "help", "exit", ...tools.map((t) => t.name)].filter((n) => n.startsWith(last)), last];
+            return [[...Object.keys(slash), "clear", "list", "help", "exit", ...tools.map((t) => t.name)].filter((n) => n.startsWith(last)), last];
         const props = Object.keys(tools.find((t) => t.name === toks[0])?.inputSchema?.properties ?? {});
         return [props.map((p) => `--${p}`).filter((f) => f.startsWith(last)), last];
     };
@@ -241,12 +348,25 @@ async function shell(client, tools, ctx) {
         const t = line.trim();
         if (!t)
             return false;
-        if (t === "exit" || t === "quit")
+        const word = t.toLowerCase();
+        if (word === "exit" || word === "quit")
             return true;
+        if (word === "clear" || word === "cls")
+            return console.clear(), false;
+        if (word === "help" || word === "?")
+            return await slash["/help"].run(""), false;
+        if (t.startsWith("!")) {
+            // like Claude Code's bash mode: same sandbox and command policy as run_terminal
+            const command = t.slice(1).trim();
+            if (!command)
+                return console.error(c.dim("usage: !<command>   e.g.  !git status")), false;
+            return await execTool("run_terminal", { command }), false;
+        }
         if (!t.startsWith("/"))
             return await run(client, tools, tokenize(t), false), false;
-        const [name = "", ...rest] = t.split(/\s+/);
-        if (name === "/" || name === "/menu") {
+        const [raw = "", ...rest] = t.split(/\s+/);
+        const name = ALIASES[raw] ?? raw;
+        if (name === "/") {
             if (needTTY())
                 return false;
             const pick = await select("Commands", Object.entries(slash).map(([k, v]) => ({ label: k, hint: v.hint, value: k })));
@@ -254,8 +374,8 @@ async function shell(client, tools, ctx) {
         }
         const cmd = slash[name];
         if (!cmd) {
-            const hint = suggest(name.slice(1), Object.keys(slash).map((k) => k.slice(1))).map((h) => c.cyan(`/${h}`));
-            console.error(c.red(`✖ Unknown command ${name}.`) + (hint.length ? ` Did you mean: ${hint.join(", ")}?` : " Type / for the menu."));
+            const hint = suggest(raw.slice(1), Object.keys(slash).map((k) => k.slice(1))).map((h) => c.cyan(`/${h}`));
+            console.error(c.red(`✖ Unknown command ${raw}.`) + (hint.length ? ` Did you mean: ${hint.join(", ")}?` : " Type / for the menu."));
             return false;
         }
         return (await cmd.run(rest.join(" "))) === "exit";
@@ -278,11 +398,13 @@ async function shell(client, tools, ctx) {
     for (const l of box)
         console.log(c.cyan("│") + ` ${l.padEnd(w)} ` + c.cyan("│"));
     console.log(c.cyan(`╰${"─".repeat(w + 2)}╯`));
-    console.log(c.dim(" Type a tool name to run it · / for the command menu · /tools to browse · Tab completes · Ctrl+C twice to quit\n"));
+    console.log(c.dim(" Type a tool name to run it, !command for the shell · / for the command menu · /help · Ctrl+C twice to quit\n"));
     let armed = false; // first Ctrl+C only warns
     for (;;) {
         const label = ` ${shortPath(ctx.cfg.defaultWorkdir, home, Math.max(10, cols() - 8))} `;
         console.log(c.dim("──" + label + "─".repeat(Math.max(0, cols() - label.length - 2))));
+        // hint line above the input: readline wipes everything below the cursor on every redraw, so it cannot live under it
+        console.log(c.dim(truncate("/ menu · /help · /status · /tools · /doctor · /clear · !shell · /exit", cols())));
         const line = await ask(c.green("❯ "), { history: hist, completer });
         if (line === null)
             break;
@@ -301,6 +423,82 @@ async function shell(client, tools, ctx) {
         console.log();
     }
 }
+// ---------- MCP server (ported from jarvis-ts: server + Dev Tunnel + dashboard) ----------
+const SERVER_CMDS = ["start", "serve", "open", "url", "install", "uninstall"];
+/** Returns an exit code, or undefined when the process should keep running (server / supervisor). */
+async function serverCommand(cmd, argv) {
+    const { dataDir } = prepareDataDir();
+    const flag = (f) => argv.includes(f);
+    const dashboardUrl = () => {
+        const tokenFile = path.join(dataDir, ".dashboard_token");
+        if (!fs.existsSync(tokenFile))
+            return null;
+        const port = Number(readEnvFile(loadConfig({ projectDir: dataDir }).envFile).JARVIS_DASHBOARD_PORT) || 8766;
+        return `http://127.0.0.1:${port}/?token=${fs.readFileSync(tokenFile, "utf8").trim()}`;
+    };
+    switch (cmd) {
+        case "serve":
+            await import("./main.js");
+            return undefined;
+        case "open":
+        case "url": {
+            const url = dashboardUrl();
+            if (!url)
+                return console.error(c.red("✖ No dashboard token yet. Run `jarvis start` once.")), 1;
+            if (cmd === "url")
+                console.log(url);
+            else
+                (openDefault(url), console.log("Opening the dashboard. Afterwards this browser can use it directly."));
+            return 0;
+        }
+        case "install":
+        case "uninstall": {
+            const input = { node: process.execPath, entry: fileURLToPath(import.meta.url), projectDir: dataDir, home: os.homedir() };
+            const r = cmd === "install" ? install(input) : uninstall(input);
+            console.log(r.ok ? c.green(`✔ ${r.message}`) : c.red(`✖ ${r.message}`));
+            return r.ok ? 0 : 1;
+        }
+        default: {
+            // start
+            installFatalHandlers("supervisor");
+            let sup;
+            try {
+                sup = await startSupervisor({ projectDir: dataDir, tunnel: !flag("--no-tunnel") });
+            }
+            catch (e) {
+                if (e.code !== "EADDRINUSE")
+                    throw e;
+                // already running is not an error: show the existing dashboard
+                const url = dashboardUrl() ?? "";
+                const port = Number(readEnvFile(loadConfig({ projectDir: dataDir }).envFile).JARVIS_DASHBOARD_PORT) || 8766;
+                // Is it really ours? Ours answers 401 with its sign-in page when asked without a token.
+                const ours = await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(2000) }).then(async (r) => r.status === 401 && (await r.text()).includes("Jarvis"), () => false);
+                if (!ours)
+                    throw new Error(`Port ${port} is in use by another program (not this Jarvis). Set JARVIS_DASHBOARD_PORT in ${path.join(dataDir, ".env")}.`);
+                console.log("Jarvis is already running — opening the dashboard.");
+                if (!flag("--no-open"))
+                    openDefault(url);
+                return 0;
+            }
+            console.log(`Jarvis ${VERSION}
+Dashboard: ${sup.dashboardUrl}
+(Ctrl+C to stop)`);
+            if (!flag("--no-open"))
+                openDefault(sup.dashboardUrl);
+            let stopping = false;
+            const shutdown = async () => {
+                if (stopping)
+                    return;
+                stopping = true;
+                await sup.stop();
+                process.exit(0);
+            };
+            process.on("SIGINT", shutdown);
+            process.on("SIGTERM", shutdown);
+            return undefined;
+        }
+    }
+}
 async function main() {
     const raw = process.argv.includes("--raw") || (!isTTY && !process.env.FORCE_COLOR); // FORCE_COLOR = "treat me as a terminal"
     const argv = process.argv.slice(2).filter((a) => a !== "--raw");
@@ -309,6 +507,8 @@ async function main() {
         return console.log(VERSION), 0;
     if (["help", "--help", "-h"].includes(cmd) && argv.length <= 1)
         return console.log(HELP), 0;
+    if (SERVER_CMDS.includes(cmd))
+        return serverCommand(cmd, argv);
     const { dataDir } = prepareDataDir();
     const ctx = createCtx(loadConfig({ projectDir: appDir, dataDir }));
     const cwd = realResolve(process.cwd());
@@ -330,4 +530,6 @@ async function main() {
         await client.close();
     }
 }
-main().then((code) => process.exit(code), (e) => { console.error(c.red(`✖ ${e instanceof Error ? e.message : e}`)); process.exit(1); });
+main().then((code) => { if (code !== undefined)
+    process.exit(code); }, // undefined = keep serving
+(e) => { console.error(c.red(`✖ ${e instanceof Error ? e.message : e}`)); process.exit(1); });
