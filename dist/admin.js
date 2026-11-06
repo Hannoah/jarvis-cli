@@ -14,6 +14,7 @@ import { applySettings, readApiKey, regenerateApiKey } from "./supervisor/settin
 import { setClipboard } from "./system/platform.js";
 import { portOpen, sleep } from "./system/proc.js";
 import { gateCommand } from "./tools/terminal.js";
+import { withSpinner } from "./tui.js";
 export const row = (k, v) => console.log(`  ${c.dim(k.padEnd(14))}${v}`);
 const fail = (msg) => (console.error(c.red(`✖ ${msg}`)), 1);
 const unquote = (s) => s.replace(/^(["'])(.*)\1$/, "$2");
@@ -89,19 +90,22 @@ export async function startBackground(cfg, entry, flags) {
         env: { ...process.env, JARVIS_HOME: cfg.dataDir },
     });
     child.unref();
-    for (let i = 0; i < 60; i++) {
-        await sleep(500);
-        if (await control(cfg, "GET", "/api/state")) {
-            console.log(c.green("✔ started in the background"));
-            await sleep(1500); // let the MCP server finish booting before reporting its state
-            await status(cfg);
-            console.log(c.dim("  stop: jarvis stop   ·   connection info: jarvis mcp"));
-            return 0;
+    const up = await withSpinner("Starting the MCP server", (async () => {
+        for (let i = 0; i < 60; i++) {
+            await sleep(500);
+            if (await control(cfg, "GET", "/api/state"))
+                return (await sleep(1500), true); // let the server finish booting before reporting its state
+            if (child.exitCode !== null)
+                return false;
         }
-        if (child.exitCode !== null)
-            break;
-    }
-    return fail(`The server did not come up. See ${path.join(cfg.dataDir, "supervisor.log")}`);
+        return false;
+    })());
+    if (!up)
+        return fail(`The server did not come up. See ${path.join(cfg.dataDir, "supervisor.log")}`);
+    console.log(c.green("✔ started in the background"));
+    await status(cfg);
+    console.log(c.dim("  stop: jarvis stop   ·   connection info: jarvis mcp"));
+    return 0;
 }
 /** Stop everything the supervisor runs (MCP server, tunnel, dashboard). */
 export async function stop(cfg) {
@@ -127,24 +131,35 @@ export async function stop(cfg) {
         console.log(c.yellow("✔ MCP server stopped. That supervisor has no shutdown endpoint: close its window (or Ctrl+C) to end it."));
         return 0;
     }
-    for (let i = 0; i < 40; i++) {
-        if (!(await portOpen(dashPort(cfg))) && !(await portOpen(cfg.port)))
-            return console.log(c.green("✔ stopped")), 0;
-        await sleep(250);
-    }
-    return fail("Asked it to stop, but a port is still open. Check: jarvis status");
+    const down = await withSpinner("Stopping", (async () => {
+        for (let i = 0; i < 40; i++) {
+            if (!(await portOpen(dashPort(cfg))) && !(await portOpen(cfg.port)))
+                return true;
+            await sleep(250);
+        }
+        return false;
+    })());
+    if (!down)
+        return fail("Asked it to stop, but a port is still open. Check: jarvis status");
+    console.log(c.green("✔ stopped"));
+    return 0;
 }
 export async function restart(cfg) {
     if (!(await control(cfg, "GET", "/api/state")))
         return fail("Not running. Start it with: jarvis start -d");
-    await control(cfg, "POST", "/api/server/restart");
-    for (let i = 0; i < 20; i++) {
-        const st = await control(cfg, "GET", "/api/state");
-        if (st?.server.state === "running")
-            return console.log(c.green("✔ MCP server restarted")), 0;
-        await sleep(500);
-    }
-    return fail("Restarted, but the MCP server is not running yet. Check: jarvis status");
+    const ok = await withSpinner("Restarting the MCP server", (async () => {
+        await control(cfg, "POST", "/api/server/restart");
+        for (let i = 0; i < 20; i++) {
+            if ((await control(cfg, "GET", "/api/state"))?.server.state === "running")
+                return true;
+            await sleep(500);
+        }
+        return false;
+    })());
+    if (!ok)
+        return fail("Restarted, but the MCP server is not running yet. Check: jarvis status");
+    console.log(c.green("✔ MCP server restarted"));
+    return 0;
 }
 // ---------- settings ----------
 /** Save a settings patch and refresh this process's live config (in place: tools hold the same object). */

@@ -73,3 +73,18 @@ test("withSpinner is transparent when stderr is not a terminal", async () => {
   assert.equal(await withSpinner("x", Promise.resolve(42), out), 42);
   await assert.rejects(withSpinner("x", Promise.reject(new Error("boom")), out), /boom/);
 });
+
+test("ask: the footer (bottom border of the input box) is there from the first frame and wiped on submit", async () => {
+  const { ask } = await import("../src/tui.js");
+  const input = Object.assign(new PassThrough(), { isTTY: true, setRawMode() { return this; } });
+  const output = Object.assign(new PassThrough(), { isTTY: true, columns: 80 });
+  let written = "";
+  output.on("data", (d: Buffer) => (written += d.toString()));
+  const p = ask("> ", { footer: "FOOTER-LINE" }, { input: input as never, output: output as never });
+  await new Promise((r) => setTimeout(r, 40));
+  assert.ok(written.includes("FOOTER-LINE"), "footer painted before any key");
+  const at = written.indexOf("FOOTER-LINE");
+  input.write("x\r");
+  assert.equal(await p, "x");
+  assert.ok(written.lastIndexOf(`${String.fromCharCode(27)}[0J`) > at, "footer cleared after Enter");
+});

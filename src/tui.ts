@@ -116,7 +116,7 @@ export async function withSpinner<T>(label: string, p: Promise<T>, out: NodeJS.W
  */
 export function ask(
   prompt: string,
-  opts: { history?: string[]; completer?: readline.Completer; suggest?: (line: string) => Item<unknown>[] } = {},
+  opts: { history?: string[]; completer?: readline.Completer; suggest?: (line: string) => Item<unknown>[]; footer?: string } = {},
   io: IO = stdio(),
 ): Promise<string | typeof SIGINT | null> {
   return new Promise((resolve) => {
@@ -130,16 +130,19 @@ export function ask(
       drawn = 0;
     };
     const paint = () => {
-      if (settled || !opts.suggest) return;
-      const items = opts.suggest(rl.line).slice(0, 6);
-      if (!items.length) return clearBelow();
+      if (settled) return;
+      const items = (opts.suggest?.(rl.line) ?? []).slice(0, 6);
       const cols = (io.output.columns ?? 100) - 1;
       const labels = items.map((it) => truncate(it.label, Math.max(8, cols - 4)));
-      const w = Math.min(24, Math.max(...labels.map((l) => l.length)));
-      const lines = items.map((it, i) => {
-        const room = cols - 4 - w - 2;
-        return "  " + c.accent(pad(labels[i]!, w)) + (it.hint && room >= 8 ? c.gray("  " + truncate(it.hint, room)) : "");
-      });
+      const w = Math.min(24, Math.max(0, ...labels.map((l) => l.length)));
+      const lines = [
+        ...(opts.footer ? [opts.footer] : []), // e.g. the bottom border of the input box, then the suggestions
+        ...items.map((it, i) => {
+          const room = cols - 4 - w - 2;
+          return "  " + c.accent(pad(labels[i]!, w)) + (it.hint && room >= 8 ? c.gray("  " + truncate(it.hint, room)) : "");
+        }),
+      ];
+      if (!lines.length) return clearBelow();
       clearBelow();
       io.output.write("\n" + lines.join("\n") + `\x1b[${lines.length}A\x1b[${col()}G`);
       drawn = lines.length;
@@ -157,5 +160,6 @@ export function ask(
     rl.on("close", () => fin(null));
     io.input.on("keypress", paint); // registered after readline's own handler, so rl.line is already up to date
     rl.question(prompt, (a) => fin(a));
+    paint(); // the footer (if any) is there from the first frame, not only after the first key
   });
 }

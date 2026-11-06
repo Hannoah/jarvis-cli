@@ -40,7 +40,7 @@ npm install -g https://github.com/Hannoah/jarvis-cli/archive/refs/heads/main.tar
 jarvis version
 ```
 
-빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 같은 명령을 다시 실행하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.4.0.tar.gz`처럼 태그를 지정하세요.
+빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 같은 명령을 다시 실행하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.5.0.tar.gz`처럼 태그를 지정하세요.
 
 > `npm install -g github:Hannoah/jarvis-cli` 형태는 쓰지 마세요. npm 11에서 전역 설치 시 임시 폴더로 링크가 걸려 실행이 깨집니다.
 
@@ -104,29 +104,41 @@ jarvis run_terminal "Get-Date -Format o"
 
 ### 대화형 모드
 
-터미널에서 `jarvis`만 입력하면 입력창이 열립니다.
+터미널에서 `jarvis`만 입력하면 입력창이 열립니다. (로고는 실제 터미널에서 테마 색 그라데이션으로 표시됩니다.)
 
 ```
-╭──────────────────────────────────────────────────────╮
-│ ◆ Jarvis 0.1.0                                       │
-│   folder  ~\Workpp                                 │
-│   39 tools · 4 allowed folders · terminal: allowlist │
-╰──────────────────────────────────────────────────────╯
-── ~\Workpp ───────────────────────────────────────────
-❯ _
+  ██╗ █████╗ ██████╗ ██╗   ██╗██╗███████╗
+  ██║██╔══██╗██╔══██╗██║   ██║██║██╔════╝
+  ██║███████║██████╔╝██║   ██║██║███████╗
+██╗██║██╔══██║██╔══██╗╚██╗ ██╔╝██║╚════██║
+╚█████╔╝██║  ██║██║  ██║ ╚████╔╝ ██║███████║
+ ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚═╝╚══════╝
+  v0.5.0  ·  ~\Work\app
+  39 tools · 4 folders · allowlist · MCP ● running
+  tip: /tools walks you through any tool's parameters, step by step.
+
+╭─ ~\Work\app ─────────────────────── MCP ● running · allowlist ─╮
+│ ❯ read_file package.json 1 2
+╰─ / menu · /help · /status · /mcp · /permissions · /theme · /exit ─╯
+● read_file  --path package.json --start_line 1 --max_lines 2
+│ path=C:\Work\app\package.json  encoding=utf-8  total_lines=52  start_line=1  end_line=2
+│ {
+│   "name": "jarvis-cli",
+╰ ✔ 11ms
 ```
 
 - **도구 바로 실행:** `read_file notes.txt`, `git_status`, `help read_file` — 한 줄 모드와 같은 문법입니다.
 - **`/` 명령 메뉴:** `/`만 입력하면 메뉴가 열립니다. ↑↓로 이동, 글자를 입력하면 필터링, Enter로 선택, Esc로 취소합니다.
-- **`/tools`:** 카테고리 → 도구를 고르면 파라미터를 하나씩 물어보고, 선택 항목은 메뉴에서 추가한 뒤 `▶ Run`으로 실행합니다. 실행 전에 같은 동작의 한 줄 명령(`→ read_file --path ...`)을 보여줍니다.
+- **`/tools`:** 카테고리 → 도구를 고르면 파라미터를 하나씩 물어보고, 선택 항목은 메뉴에서 추가한 뒤 `▶ Run`으로 실행합니다. 실행된 카드의 헤더에 같은 동작의 한 줄 명령 옵션(`--path ...`)이 표시됩니다.
 - **`!명령`:** Claude Code의 bash 모드처럼 `!git status`는 `run_terminal`로 셸 명령을 실행합니다(샌드박스·명령 정책 동일 적용).
 - **`clear`:** 슬래시 없이 `clear`(또는 `cls`)로 화면을 지웁니다. `help`, `exit`도 슬래시 없이 됩니다. Ctrl+L도 됩니다.
-- **상태 줄과 안내 줄:** 입력창 위에 현재 폴더, MCP 서버 실행 여부(● 실행 중 / ○ 중지), 접근 정책(`allowlist`, `write off` 등)이 매번 갱신되어 표시되고, 그 아래에 주요 명령이 항상 보입니다.
+- **입력 박스:** 위쪽 테두리가 상태 줄입니다(현재 폴더, MCP 서버 ● 실행 중 / ○ 중지, 접근 정책 `allowlist`·`write off` 등, 매번 갱신). 아래쪽 테두리에는 주요 명령이 항상 보입니다.
 - **입력 중 자동 제안:** `/`나 도구 이름 일부(두 글자 이상)를 입력하면 아래에 일치하는 명령·도구가 설명과 함께 나타나고, `read_file `처럼 도구 이름 뒤에 공백을 넣으면 그 도구의 사용법이 나타납니다. Tab으로 완성합니다.
+- **도구 실행 카드:** 실행하면 `● 도구  --옵션` 헤더, 왼쪽 세로선(`│`)이 붙은 결과, `╰ ✔ 18ms` 결과 줄로 표시됩니다. 0.25초 넘게 걸리면 스피너와 경과 시간이 나옵니다. 목록 표는 크기를 `1.5 KB`처럼 읽기 쉽게 보여주고 폴더를 강조색으로 표시합니다.
 - **메뉴 패널:** 둥근 테두리 패널에서 ↑↓로 이동하고, 글자를 입력하면 필터링되며, 항목이 많으면 `↑ n more`/`↓ n more`와 현재 위치(`3/19`)를 보여줍니다. PgUp/PgDn/Home/End도 됩니다.
-- **실행 표시:** 도구가 0.25초 넘게 걸리면 스피너와 경과 시간이 나오고, 끝나면 `✔ read_file · 18ms`처럼 결과 줄이 붙습니다. 터미널 제목에도 현재 폴더가 표시됩니다.
-- **시작 화면:** 버전, 폴더, 도구 수, 승인 폴더 수, 정책, MCP 상태와 함께 매번 다른 사용 팁이 나옵니다.
-- **색상:** 24비트 색을 지원하는 터미널(Windows Terminal, VS Code 등)에서는 강조색을 24비트로, 그 외에는 256색으로 표시합니다. `NO_COLOR=1`이면 끕니다. `jarvis list`는 터미널에서 카테고리별로 묶어 보여줍니다.
+- **테마:** `/theme`으로 강조색을 고릅니다(`blue` 기본, `violet`, `emerald`, `amber`, `rose`, `mono`). 설정 파일의 `JARVIS_THEME`에 저장되고 로고 그라데이션, 테두리, 메뉴 강조에 적용됩니다.
+- **색상 지원:** 24비트 색을 지원하는 터미널(Windows Terminal, VS Code 등)에서는 24비트로, 그 외에는 256색으로 표시합니다. `NO_COLOR=1`이면 끕니다. 시작·종료·재시작 중에도 스피너가 나오고, 터미널 제목에 현재 폴더가 표시되며, `jarvis list`는 터미널에서 카테고리별로 묶어 보여줍니다.
+- 한국어 Windows 콘솔처럼 `…`, `·`, `●` 같은 기호를 2칸 폭으로 그리는 터미널에서도 줄이 꺾이지 않도록 테두리 폭에 여유를 둡니다.
 
 슬래시 명령 (Claude Code와 같은 이름을 우선 사용):
 
@@ -142,6 +154,7 @@ jarvis run_terminal "Get-Date -Format o"
 | `/mcp` | MCP 연결 정보(주소, API 키, 클라이언트 설정) 보기와 복사 |
 | `/start` `/stop` `/restart` | MCP 서버(+터널+대시보드)를 백그라운드로 실행 / 종료 / 서버 재시작 |
 | `/config` | 설정 파일 보기(API 키 등은 `********`로 가림), `/config edit`로 편집기 열기 |
+| `/theme [이름]` | 강조색 테마 선택 (바로 저장) |
 | `/memory` | 위키 메모리 색인 |
 | `/tools` | 카테고리 → 도구 선택 → 파라미터 폼 |
 | `/list [필터]` | 도구 목록 |

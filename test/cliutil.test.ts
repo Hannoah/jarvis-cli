@@ -37,3 +37,16 @@ test("render: content as-is, rows as table, other JSON indented; errorOf extract
   assert.deepEqual(errorOf('{"success":false,"error":"boom","hint":"x"}'), { message: "boom", extra: '{\n  "hint": "x"\n}' });
   assert.equal(errorOf('{"ok":1}'), null);
 });
+
+test("themes, gradient and human sizes", async () => {
+  const { setTheme, currentTheme, gradient, humanBytes, themeNames, render } = await import("../src/cliutil.js");
+  assert.ok(themeNames.includes("violet"));
+  assert.equal(setTheme("nope"), false);
+  assert.equal(setTheme("violet"), true);
+  assert.equal(currentTheme(), "violet");
+  setTheme("blue");
+  assert.equal(gradient("ab\ncd"), "ab\ncd"); // colours are off under test, text is untouched
+  assert.deepEqual([512, 1536, 5 * 1024 * 1024, null].map(humanBytes), ["512 B", "1.5 KB", "5.0 MB", "-"]);
+  const out = render(JSON.stringify({ count: 1, items: [{ path: "a.ts", type: "file", size_bytes: 1536 }] }));
+  assert.ok(out.includes("1.5 KB") && !out.includes("size_bytes"), out);
+});

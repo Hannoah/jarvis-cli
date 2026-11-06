@@ -9,8 +9,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { adminCommand, BROAD, row, startBackground, status as liveStatus } from "./admin.js";
 import {
-  c, categorize, cmdline, coerce, errorOf, exitCodeOf, isTTY, parseArgs, propType, render, shortPath, suggest, tokenize, toolHelp, truncate, usage,
-  type Schema,
+  c, categorize, cmdline, coerce, currentTheme, errorOf, exitCodeOf, gradient, isTTY, parseArgs, propType, render, setTheme, shortPath, suggest, themeNames, themeSwatch, tokenize,
+  toolHelp, truncate, usage,
+  type Schema, type ThemeName,
 } from "./cliutil.js";
 import { expandPath, isResolvedPathAllowed, loadConfig, readEnvFile, realResolve } from "./core/config.js";
 import { createCtx, type Ctx } from "./core/context.js";
@@ -21,6 +22,7 @@ import { createMcpServer } from "./server/mcp.js";
 import { loadPlugins } from "./server/plugins.js";
 import { psExecutable } from "./security/policy.js";
 import { startSupervisor } from "./supervisor/index.js";
+import { updateEnvFile } from "./supervisor/settings.js";
 import { install, uninstall } from "./system/autostart.js";
 import { enrichEnv, which } from "./system/cliEnv.js";
 import { openDefault } from "./system/platform.js";
@@ -68,6 +70,19 @@ const ENTRY = fileURLToPath(import.meta.url); // this file, for spawning the bac
 let interactive = false; // set by the prompt: adds a per-call status line after each tool result
 const took = (ms: number) => (ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`);
 
+// "JARVIS" in the ANSI Shadow font, six rows; coloured with the theme gradient on the welcome screen
+const LOGO = (() => {
+  const glyphs = [
+    ["     ██╗", "     ██║", "     ██║", "██   ██║", "╚█████╔╝", " ╚════╝ "],
+    [" █████╗ ", "██╔══██╗", "███████║", "██╔══██║", "██║  ██║", "╚═╝  ╚═╝"],
+    ["██████╗ ", "██╔══██╗", "██████╔╝", "██╔══██╗", "██║  ██║", "╚═╝  ╚═╝"],
+    ["██╗   ██╗", "██║   ██║", "██║   ██║", "╚██╗ ██╔╝", " ╚████╔╝ ", "  ╚═══╝  "],
+    ["██╗", "██║", "██║", "██║", "██║", "╚═╝"],
+    ["███████╗", "██╔════╝", "███████╗", "╚════██║", "███████║", "╚══════╝"],
+  ];
+  return [0, 1, 2, 3, 4, 5].map((r) => glyphs.map((g) => g[r]!).join("").trimEnd());
+})();
+
 function list(tools: Tools, rest: string[]): void {
   const flags = new Set(rest.filter((a) => a.startsWith("--")));
   const q = rest.find((a) => !a.startsWith("--"))?.toLowerCase();
@@ -96,26 +111,36 @@ const completion = (shell: string, names: string[]): string =>
     ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }
 }`;
 
-/** Call a tool and print its result. Returns the process exit code. */
+/** Call a tool and print its result. Returns the process exit code. In the prompt each call is drawn as a small card. */
 async function execute(client: Client, tool: Tool, args: Record<string, unknown>, raw: boolean): Promise<number> {
   const t0 = Date.now();
+  const cols = (process.stdout.columns ?? 80) - 1;
+  const bar = (color: (s: string) => string, text: string) => text.split("\n").map((l) => `${color("│ ")}${l}`).join("\n");
+  if (interactive) {
+    const flags = cmdline(tool.name, args).slice(tool.name.length).trim();
+    console.log(`${c.accent("●")} ${c.bold(tool.name)}${flags ? c.gray(`  ${truncate(flags, Math.max(10, cols - tool.name.length - 4))}`) : ""}`);
+  }
   const call = client.callTool({ name: tool.name, arguments: args });
   const res = await (raw ? call : withSpinner(tool.name, call));
   let code = res.isError ? 1 : 0;
   for (const part of (res.content ?? []) as { type: string; text?: string }[]) {
-    if (part.type !== "text") { console.log(c.dim(`[${part.type} content omitted]`)); continue; }
+    if (part.type !== "text") { console.log(interactive ? bar(c.gray, c.dim(`[${part.type} content omitted]`)) : c.dim(`[${part.type} content omitted]`)); continue; }
     const err = errorOf(part.text ?? "");
     if (exitCodeOf(part.text ?? "")) code = 1;
     if (err && !raw) {
       code = 1;
-      console.error(c.red(`✖ ${err.message}`));
-      if (err.extra) console.error(err.extra);
+      if (interactive) console.log(bar(c.red, `${c.red(`✖ ${err.message}`)}${err.extra ? `\n${err.extra}` : ""}`));
+      else {
+        console.error(c.red(`✖ ${err.message}`));
+        if (err.extra) console.error(err.extra);
+      }
     } else {
       if (err) code = 1;
-      console.log(raw ? part.text : render(part.text ?? ""));
+      const text = raw ? (part.text ?? "") : render(part.text ?? "");
+      console.log(interactive ? bar(c.gray, text) : text);
     }
   }
-  if (interactive) console.log(`  ${code ? c.red("✖") : c.green("✔")} ${c.gray(`${tool.name} · ${took(Date.now() - t0)}`)}`);
+  if (interactive) console.log(`${c.gray("╰")} ${code ? c.red("✖") : c.green("✔")} ${c.gray(took(Date.now() - t0))}`);
   return code;
 }
 
@@ -208,7 +233,6 @@ async function shell(client: Client, tools: Tools, ctx: Ctx): Promise<void> {
       if (pick === "") break;
       if (!(await setParam(pick))) return cancelled();
     }
-    console.log(c.dim(`→ ${cmdline(tool.name, args)}`));
     await execute(client, tool, args, false);
   }
 
@@ -383,6 +407,19 @@ async function shell(client: Client, tools: Tools, ctx: Ctx): Promise<void> {
     await menu();
   };
 
+  async function themeCmd(arg: string): Promise<void> {
+    let name = arg.trim().toLowerCase();
+    if (!name) {
+      if (needTTY()) return;
+      const pick = await select("Theme (saved)", themeNames.map((n) => ({ label: n, hint: n === currentTheme() ? "current" : "", value: n as string })));
+      if (!pick) return;
+      name = pick;
+    }
+    if (!setTheme(name)) return void console.error(c.red(`✖ Unknown theme '${name}'. Choose: ${themeNames.join(", ")}`));
+    updateEnvFile(ctx.cfg.envFile, { JARVIS_THEME: name });
+    console.log(`${c.green("✔")} theme: ${name} ${themeSwatch(name as ThemeName)}`);
+  }
+
   type Slash = { hint: string; run: (arg: string) => Promise<void | "exit"> };
   // Names follow Claude Code where there is an equivalent (/help /clear /status /doctor /permissions /add-dir /config /memory /mcp /exit).
   const slash: Record<string, Slash> = {
@@ -398,6 +435,7 @@ async function shell(client: Client, tools: Tools, ctx: Ctx): Promise<void> {
             "  /mcp /dirs /permissions /allowlist   connection info · approved folders · access switches · command allowlist",
             "  /start /stop /restart                run / stop / restart the MCP server in the background",
             "  clear            clear the screen (also /clear, Ctrl+L)",
+            "  /theme           change the accent colour (saved)",
             "  Tab              completes tool names, --options and /commands",
             "  ↑ / ↓            previous commands · Ctrl+C twice, Ctrl+D or /exit to quit",
             "",
@@ -411,6 +449,7 @@ async function shell(client: Client, tools: Tools, ctx: Ctx): Promise<void> {
     "/status": { hint: "Version, folder, access policy and MCP server state", run: status },
     "/doctor": { hint: "Check Node, PowerShell, git, devtunnel and other prerequisites", run: doctor },
     "/config": { hint: "Show the settings file (secrets masked); /config edit opens it", run: config },
+    "/theme": { hint: "Change the accent colour theme (saved): blue, violet, emerald, amber, rose, mono", run: themeCmd },
     "/memory": { hint: "Wiki memory index (wiki_index)", run: async () => execTool("wiki_index") },
     "/dirs": { hint: "Approved folders: list, add, remove (saved)", run: adminSlash("dirs", dirsMenu) },
     "/add-dir": { hint: "Approve a folder (saved): /add-dir <folder>", run: async (a) => void (await adminCommand("dirs", ["add", ...tokenize(a)], ctx.cfg)) },
@@ -492,18 +531,12 @@ async function shell(client: Client, tools: Tools, ctx: Ctx): Promise<void> {
   ];
   const policy = () => (ctx.cfg.enableTerminal ? (ctx.cfg.allowUnsafe ? "unsafe" : ctx.cfg.terminalMode) : "terminal off");
   const mcpUp0 = await portOpen(ctx.cfg.port);
-  const box = [
-    `◆ Jarvis  v${VERSION}`,
-    `  ${shortPath(ctx.cfg.defaultWorkdir, home, 60)}`,
-    `  ${tools.length} tools · ${ctx.cfg.allowedDirs.length} folder${ctx.cfg.allowedDirs.length === 1 ? "" : "s"} · ${policy()} · MCP ${mcpUp0 ? "● running" : "○ stopped"}`,
-  ];
-  const w = Math.max(...box.map((l) => l.length));
-  const paint = (l: string, i: number) =>
-    i === 0 ? c.bold(c.accent(l)) : i === 1 ? c.gray(l) : l.replace(/MCP (●|○) (running|stopped)/, (_m, d: string, st: string) => `MCP ${d === "●" ? c.green(d) : c.gray(d)} ${st}`);
-  console.log(c.accent(`╭${"─".repeat(w + 2)}╮`));
-  box.forEach((l, i) => console.log(`${c.accent("│")} ${paint(l.padEnd(w), i)} ${c.accent("│")}`));
-  console.log(c.accent(`╰${"─".repeat(w + 2)}╯`));
-  console.log(c.gray(truncate(` tip: ${TIPS[Math.floor(Math.random() * TIPS.length)]}`, cols())) + "\n");
+  const nDirs = ctx.cfg.allowedDirs.length;
+  if (cols() >= Math.max(...LOGO.map((l) => l.length)) + 4) console.log("\n" + gradient(LOGO.map((l) => `  ${l}`).join("\n")));
+  else console.log(c.bold(c.accent("\n  ◆ JARVIS")));
+  console.log(c.gray(`  v${VERSION}  ·  ${shortPath(ctx.cfg.defaultWorkdir, home, Math.max(10, cols() - 24))}`));
+  console.log(`${c.gray(`  ${tools.length} tools · ${nDirs} folder${nDirs === 1 ? "" : "s"} · ${policy()} · MCP `)}${mcpUp0 ? c.green("● running") : c.gray("○ stopped")}`);
+  console.log(c.gray(truncate(`  tip: ${TIPS[Math.floor(Math.random() * TIPS.length)]}`, cols())) + "\n");
 
   /** Live suggestions under the input: slash commands, tool names, or the usage of the tool being typed. */
   const suggestFor = (line: string): Item<unknown>[] => {
@@ -525,20 +558,22 @@ async function shell(client: Client, tools: Tools, ctx: Ctx): Promise<void> {
 
   let armed = false; // first Ctrl+C only warns
   for (;;) {
-    // status line: folder on the left, MCP server and access policy on the right
+    // input box: the top border is a status line (folder, MCP state, access policy), the bottom border lists the main commands
     const up = await portOpen(ctx.cfg.port);
-    const left = `── ${shortPath(ctx.cfg.defaultWorkdir, home, Math.max(10, cols() - 44))} `;
+    const W = Math.max(40, Math.min(cols(), 110));
+    const folder = shortPath(ctx.cfg.defaultWorkdir, home, Math.max(10, W - 48));
     const bits = [policy(), ...(ctx.cfg.enableWrite ? [] : ["write off"]), ...(ctx.cfg.enableRead ? [] : ["read off"])].join(" · ");
-    const right = `${up ? "running" : "stopped"} · ${bits} ──`;
-    const fill = cols() - 3 - left.length - right.length - " MCP ● ".length; // 3 spare columns: East Asian terminals draw …, · and ● two cells wide
-    console.log(
+    const state = up ? "running" : "stopped";
+    const wide = (t: string) => (t.match(/[…·●○]/g) ?? []).length; // East Asian terminals draw these two cells wide: leave room
+    const fill = W - wide(`${folder}${bits}·●`) - folder.length - (state.length + bits.length + 9) - 8;
+    const top =
       fill >= 2
-        ? c.gray(left + "─".repeat(fill) + " MCP ") + (up ? c.green("●") : c.gray("○")) + c.gray(` ${right}`)
-        : c.gray(left + "─".repeat(Math.max(0, cols() - left.length))),
-    );
-    // hint line above the input: readline wipes everything below the cursor on every redraw, so it cannot live under it
-    console.log(c.gray(truncate("/ menu · /help · /status · /mcp · /permissions · /start · /stop · /exit", cols())));
-    const line = await ask(c.accent("❯ "), { history: hist, completer, suggest: suggestFor });
+        ? c.gray("╭─ ") + c.bold(folder) + c.gray(` ${"─".repeat(fill)} MCP `) + (up ? c.green("●") : c.gray("○")) + c.gray(` ${state} · ${bits} ─╮`)
+        : c.gray("╭─ ") + c.bold(folder) + c.gray(` ${"─".repeat(Math.max(2, W - folder.length - 6))}╮`);
+    const keys = truncate("/ menu · /help · /status · /mcp · /permissions · /theme · /exit", Math.max(10, W - 8));
+    const bottom = c.gray(`╰─ ${keys} ${"─".repeat(Math.max(2, W - wide(keys) - keys.length - 5))}╯`);
+    console.log(top);
+    const line = await ask(c.gray("│ ") + c.accent("❯ "), { history: hist, completer, suggest: suggestFor, footer: bottom });
     if (line === null) break;
     if (line === SIGINT) {
       if (armed) break;
@@ -651,6 +686,7 @@ async function main(): Promise<number | undefined> {
 
   const { dataDir } = prepareDataDir();
   const ctx = createCtx(loadConfig({ projectDir: appDir, dataDir }));
+  setTheme(readEnvFile(ctx.cfg.envFile).JARVIS_THEME ?? process.env.JARVIS_THEME ?? "blue");
   const cwd = realResolve(process.cwd());
   if (isResolvedPathAllowed(ctx.cfg, cwd)) ctx.cfg.defaultWorkdir = cwd; // CLI: relative paths mean "here", when "here" is allowed
   Object.assign(process.env, enrichEnv(process.env, ctx.cfg.home));

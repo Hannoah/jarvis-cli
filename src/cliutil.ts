@@ -4,15 +4,64 @@ export const isTTY = !!process.stdout.isTTY;
 const colorOn = !process.env.NO_COLOR && (!!process.env.FORCE_COLOR || isTTY);
 // 24-bit color where it is known to work (Windows Terminal, VS Code, COLORTERM), 256-color otherwise
 const trueColor = /truecolor|24bit/i.test(process.env.COLORTERM ?? "") || !!process.env.WT_SESSION || process.env.TERM_PROGRAM === "vscode";
-const ACCENT = trueColor ? "38;2;110;168;254" : "38;5;75";
 const esc = (code: string, s: string) => (colorOn ? `\x1b[${code}m${s}\x1b[0m` : s);
 const sgr = (n: number) => (s: string) => esc(String(n), s);
+
+type RGB = [number, number, number];
+/** a→b is the logo gradient, a is the accent colour, p256 is the nearest xterm-256 colour for terminals without 24-bit. */
+export const THEMES = {
+  blue: { a: [110, 168, 254] as RGB, b: [167, 139, 250] as RGB, p256: 75 },
+  violet: { a: [167, 139, 250] as RGB, b: [244, 114, 182] as RGB, p256: 141 },
+  emerald: { a: [52, 211, 153] as RGB, b: [56, 189, 248] as RGB, p256: 42 },
+  amber: { a: [251, 191, 36] as RGB, b: [248, 113, 113] as RGB, p256: 214 },
+  rose: { a: [251, 113, 133] as RGB, b: [192, 132, 252] as RGB, p256: 211 },
+  mono: { a: [210, 210, 210] as RGB, b: [140, 140, 140] as RGB, p256: 250 },
+};
+export type ThemeName = keyof typeof THEMES;
+export const themeNames = Object.keys(THEMES) as ThemeName[];
+let theme: ThemeName = "blue";
+export const currentTheme = () => theme;
+export function setTheme(name: string): boolean {
+  if (!(name in THEMES)) return false;
+  theme = name as ThemeName;
+  return true;
+}
+const fg = (t: ThemeName) => (trueColor ? `38;2;${THEMES[t].a.join(";")}` : `38;5;${THEMES[t].p256}`);
+const lerp = (a: RGB, b: RGB, t: number) => a.map((x, i) => Math.round(x + (b[i]! - x) * t)).join(";");
+
 export const c = {
   bold: sgr(1), dim: sgr(2), red: sgr(31), green: sgr(32), yellow: sgr(33), cyan: sgr(36), gray: sgr(90),
-  accent: (s: string) => esc(ACCENT, s),
+  accent: (s: string) => esc(fg(theme), s),
   /** selected menu row: subtle background + bold accent */
-  hl: (s: string) => esc(`48;5;237;1;${ACCENT}`, s),
+  hl: (s: string) => esc(`48;5;237;1;${fg(theme)}`, s),
 };
+
+/** Colour a (multi-line) block with the theme gradient from left to right; plain accent where 24-bit colour is unavailable. */
+export function gradient(text: string, name: ThemeName = theme): string {
+  if (!colorOn) return text;
+  const width = Math.max(1, ...text.split("\n").map((l) => l.length - 1));
+  return text
+    .split("\n")
+    .map((line) =>
+      trueColor
+        ? [...line].map((ch, i) => (ch === " " ? ch : `\x1b[38;2;${lerp(THEMES[name].a, THEMES[name].b, i / width)}m${ch}`)).join("") + "\x1b[0m"
+        : `\x1b[${fg(name)}m${line}\x1b[0m`,
+    )
+    .join("\n");
+}
+
+/** Two gradient blocks showing what a theme looks like, for the picker. */
+export const themeSwatch = (name: ThemeName) => gradient("████", name);
+
+/** 1536 -> "1.5 KB". */
+export function humanBytes(n: unknown): string {
+  if (typeof n !== "number") return "-";
+  if (n < 1024) return `${n} B`;
+  const u = ["KB", "MB", "GB", "TB"];
+  let v = n / 1024, i = 0;
+  while (v >= 1024 && i < u.length - 1) (v /= 1024, i++);
+  return `${v.toFixed(v < 10 ? 1 : 0)} ${u[i]}`;
+}
 export const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
 export const visibleLength = (s: string) => stripAnsi(s).length;
 
@@ -92,12 +141,14 @@ const isRows = (v: unknown): v is Row[] =>
   Array.isArray(v) && v.length > 0 && v.every((r) => r && typeof r === "object" && !Array.isArray(r) && Object.values(r).every(scalar));
 
 // ponytail: pads by string length, so double-width (CJK) cells misalign slightly; use a width lib if that matters
-export function table(rows: Row[], maxCell = 60): string {
+export function table(rows: Row[], maxCell = 60, style?: (col: string, text: string, row: Row) => string): string {
   const cols = [...new Set(rows.flatMap((r) => Object.keys(r)))];
   const body = rows.map((r) => cols.map((k) => truncate(cell(r[k]), maxCell)));
   const w = cols.map((k, i) => Math.max(k.length, ...body.map((r) => r[i]!.length)));
-  const line = (cells: string[], f: (s: string) => string) => cells.map((s, i) => f(s.padEnd(w[i]!))).join("  ").trimEnd();
-  return [line(cols, (s) => c.bold(s)), ...body.map((r) => line(r, (s) => s))].join("\n");
+  const padCell = (s: string, i: number) => (i === cols.length - 1 ? s : s.padEnd(w[i]!)); // the last column is never padded
+  const head = cols.map((k, i) => c.bold(padCell(k, i))).join("  ");
+  const lines = body.map((r, ri) => r.map((s, i) => (style ? style(cols[i]!, padCell(s, i), rows[ri]!) : padCell(s, i))).join("  "));
+  return [head, ...lines].join("\n");
 }
 
 const pretty = (v: unknown) => JSON.stringify(v, null, 2).replace(/^(\s*)"([^"]+)":/gm, (_, sp, k) => `${sp}${c.cyan(`"${k}"`)}:`);
@@ -118,7 +169,11 @@ export function render(text: string): string {
   }
   if (typeof o.content === "string" && rest(["content"])) return head(["content"]) + o.content;
   const rowsKey = Object.keys(o).find((k) => isRows(o[k]));
-  if (rowsKey && rest([rowsKey])) return head([rowsKey]) + table(o[rowsKey] as Row[]);
+  if (rowsKey && rest([rowsKey])) {
+    // readable sizes, folders in the accent colour, quiet type/date columns
+    const rows = (o[rowsKey] as Row[]).map((r) => (!("size_bytes" in r) ? r : Object.fromEntries(Object.entries(r).map(([k, x]) => (k === "size_bytes" ? ["size", humanBytes(x)] : [k, x])))));
+    return head([rowsKey]) + table(rows, 60, (k, text, r) => (k === "path" && r.type === "dir" ? c.accent(text) : k === "type" || k === "modified" ? c.gray(text) : text));
+  }
   return pretty(v);
 }
 
