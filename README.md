@@ -35,11 +35,13 @@ $ jarvis shell                         # 대화형 모드 (Tab 완성·히스토
 ### 방법 1 — 한 줄 설치 (추천)
 
 ```
-npm install -g github:Hannoah/jarvis-cli
+npm install -g https://github.com/Hannoah/jarvis-cli/archive/refs/heads/main.tar.gz
 jarvis version
 ```
 
-빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트도 같은 명령을 다시 실행하면 됩니다. 제거는 `npm uninstall -g jarvis-cli`.
+빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 같은 명령을 다시 실행하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.1.0.tar.gz`처럼 태그를 지정하세요.
+
+> `npm install -g github:Hannoah/jarvis-cli` 형태는 쓰지 마세요. npm 11에서 전역 설치 시 임시 폴더로 링크가 걸려 실행이 깨집니다.
 
 ### 방법 2 — 소스를 받아서
 
