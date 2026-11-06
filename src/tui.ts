@@ -116,7 +116,7 @@ export async function withSpinner<T>(label: string, p: Promise<T>, out: NodeJS.W
  */
 export function ask(
   prompt: string,
-  opts: { history?: string[]; completer?: readline.Completer; suggest?: (line: string) => Item<unknown>[]; footer?: string } = {},
+  opts: { history?: string[]; completer?: readline.Completer; suggest?: (line: string) => Item<unknown>[]; footer?: string; onClear?: () => string } = {},
   io: IO = stdio(),
 ): Promise<string | typeof SIGINT | null> {
   return new Promise((resolve) => {
@@ -129,8 +129,14 @@ export function ask(
       io.output.write(`\x1b[1E\x1b[0J\x1b[1A\x1b[${col()}G`);
       drawn = 0;
     };
-    const paint = () => {
+    const paint = (_s?: string, key?: { ctrl?: boolean; name?: string }) => {
       if (settled) return;
+      if (key?.ctrl && key.name === "l" && opts.onClear) {
+        // readline just cleared the screen: draw the header again above the prompt, then the prompt and the line being typed
+        drawn = 0;
+        io.output.write("\x1b[2J\x1b[H" + opts.onClear() + "\n");
+        rl.prompt(true);
+      }
       const items = (opts.suggest?.(rl.line) ?? []).slice(0, 6);
       const cols = (io.output.columns ?? 100) - 1;
       const labels = items.map((it) => truncate(it.label, Math.max(8, cols - 4)));

@@ -214,6 +214,31 @@ async function shell(client, tools, ctx) {
             process.stdout.write(`\x1b]0;Jarvis · ${path.basename(ctx.cfg.defaultWorkdir) || ctx.cfg.defaultWorkdir}\x07`);
     };
     const needTTY = () => (tty ? false : (console.error(c.red("✖ This needs an interactive terminal.")), true));
+    let mcpUp = false; // last known state of the MCP server, for redrawing the header
+    const policy = () => (ctx.cfg.enableTerminal ? (ctx.cfg.allowUnsafe ? "unsafe" : ctx.cfg.terminalMode) : "terminal off");
+    /** The header: shown at the start and again after the screen is cleared, so a cleared screen still says what this is. */
+    function bannerText() {
+        const nDirs = ctx.cfg.allowedDirs.length;
+        const logo = cols() >= Math.max(...LOGO.map((l) => l.length)) + 4 ? "\n" + gradient(LOGO.map((l) => `  ${l}`).join("\n")) : c.bold(c.accent("\n  ◆ JARVIS"));
+        return [
+            logo,
+            c.gray(`  v${VERSION}  ·  ${shortPath(ctx.cfg.defaultWorkdir, home, Math.max(10, cols() - 24))}`),
+            `${c.gray(`  ${tools.length} tools · ${nDirs} folder${nDirs === 1 ? "" : "s"} · ${policy()} · MCP server `)}${mcpUp ? c.green("● running") : c.gray("○ stopped")}`,
+        ].join("\n");
+    }
+    /** The line above the input: folder, MCP server state, access policy. */
+    function statusLine() {
+        const folder = shortPath(ctx.cfg.defaultWorkdir, home, Math.max(10, Math.min(cols(), 110) - 52));
+        const bits = [policy(), ...(ctx.cfg.enableWrite ? [] : ["write off"]), ...(ctx.cfg.enableRead ? [] : ["read off"])].join(" · ");
+        return `${c.bold(folder)}${c.gray("  ·  MCP server ")}${mcpUp ? c.green("● running") : c.gray("○ stopped")}${c.gray(`  ·  ${bits}`)}`;
+    }
+    async function clearScreen() {
+        console.clear();
+        if (!tty)
+            return;
+        mcpUp = await portOpen(ctx.cfg.port);
+        console.log(bannerText() + "\n");
+    }
     /** Guided form: required params first, then a menu of optional ones with a Run item on top. */
     async function form(tool) {
         const schema = tool.inputSchema;
@@ -493,7 +518,7 @@ async function shell(client, tools, ctx) {
                 "    jarvis list | help <tool> | completion <powershell|bash> | update",
             ].map((l) => c.dim(l)).join("\n")),
         },
-        "/clear": { hint: "Clear the screen", run: async () => void console.clear() },
+        "/clear": { hint: "Clear the screen (the Jarvis header is drawn again)", run: clearScreen },
         "/status": { hint: "Version, folder, access policy and MCP server state", run: status },
         "/doctor": { hint: "Check Node, PowerShell, git, devtunnel and other prerequisites", run: doctor },
         "/config": { hint: "Show the settings file (secrets masked); /config edit opens it", run: config },
@@ -534,7 +559,7 @@ async function shell(client, tools, ctx) {
         if (word === "exit" || word === "quit")
             return true;
         if (word === "clear" || word === "cls")
-            return console.clear(), false;
+            return await clearScreen(), false;
         if (word === "help" || word === "?")
             return await slash["/help"].run(""), false;
         if (t.startsWith("!")) {
@@ -587,16 +612,9 @@ async function shell(client, tools, ctx) {
         "/dirs approves another folder without editing any file.",
         "/start runs the MCP server in the background; /stop ends it.",
     ];
-    const policy = () => (ctx.cfg.enableTerminal ? (ctx.cfg.allowUnsafe ? "unsafe" : ctx.cfg.terminalMode) : "terminal off");
-    const mcpUp0 = await portOpen(ctx.cfg.port);
-    const nDirs = ctx.cfg.allowedDirs.length;
-    if (cols() >= Math.max(...LOGO.map((l) => l.length)) + 4)
-        console.log("\n" + gradient(LOGO.map((l) => `  ${l}`).join("\n")));
-    else
-        console.log(c.bold(c.accent("\n  ◆ JARVIS")));
-    console.log(c.gray(`  v${VERSION}  ·  ${shortPath(ctx.cfg.defaultWorkdir, home, Math.max(10, cols() - 24))}`));
-    console.log(`${c.gray(`  ${tools.length} tools · ${nDirs} folder${nDirs === 1 ? "" : "s"} · ${policy()} · MCP server `)}${mcpUp0 ? c.green("● running") : c.gray("○ stopped")}`);
-    const notice = launchNotice(ctx.cfg.dataDir, VERSION, { hadSettings: fs.existsSync(ctx.cfg.envFile), settingsDir: shortPath(ctx.cfg.dataDir, home, Math.max(10, cols() - 70)), serverUp: mcpUp0, tools: tools.length });
+    mcpUp = await portOpen(ctx.cfg.port);
+    console.log(bannerText());
+    const notice = launchNotice(ctx.cfg.dataDir, VERSION, { hadSettings: fs.existsSync(ctx.cfg.envFile), settingsDir: shortPath(ctx.cfg.dataDir, home, Math.max(10, cols() - 70)), serverUp: mcpUp, tools: tools.length });
     if (notice)
         console.log(notice.join("\n") + "\n");
     console.log(c.gray(truncate(`  tip: ${TIPS[Math.floor(Math.random() * TIPS.length)]}`, cols())) + "\n");
@@ -623,12 +641,10 @@ async function shell(client, tools, ctx) {
     let armed = false; // first Ctrl+C only warns
     for (;;) {
         // no frame around the input: one status line above it (folder, MCP server state, access policy), the main commands below it
-        const up = await portOpen(ctx.cfg.port);
-        const folder = shortPath(ctx.cfg.defaultWorkdir, home, Math.max(10, Math.min(cols(), 110) - 52));
-        const bits = [policy(), ...(ctx.cfg.enableWrite ? [] : ["write off"]), ...(ctx.cfg.enableRead ? [] : ["read off"])].join(" · ");
-        console.log(`${c.bold(folder)}${c.gray("  ·  MCP server ")}${up ? c.green("● running") : c.gray("○ stopped")}${c.gray(`  ·  ${bits}`)}`);
+        mcpUp = await portOpen(ctx.cfg.port);
+        console.log(statusLine());
         const keys = c.gray(truncate("/ menu · /help · /status · /mcp · /permissions · /theme · /exit", Math.max(10, cols() - 2)));
-        const line = await ask(c.accent("❯ "), { history: hist, completer, suggest: suggestFor, footer: keys });
+        const line = await ask(c.accent("❯ "), { history: hist, completer, suggest: suggestFor, footer: keys, onClear: () => bannerText() + "\n\n" + statusLine() });
         if (line === null)
             break;
         if (line === SIGINT) {

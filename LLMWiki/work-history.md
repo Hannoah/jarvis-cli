@@ -84,3 +84,9 @@
 | "MCP Server를 어떤 에이전트가 쓰는지 볼 수 있어야 해" | `server/http.ts`가 `/mcp` POST 본문을 먼저 읽어(트랜스포트에 파싱된 본문으로 넘김) `initialize`·`tools/call`마다 `[AGENT] [mcp] agent=… ver=… ua=… via=local\|tunnel\|remote ip=… rpc=… tool=…` 한 줄을 감사 로그에 남긴다. `jarvis agents`(입력창 `/agents`)가 이름별 호출 수·경로·마지막 사용·자주 쓴 도구를 보여 줌 | 트랜스포트가 stateless라 `tools/call`에는 클라이언트 이름이 없다 → `initialize`의 `clientInfo`를 UA+주소로 기억해 이어 붙임(서버 재시작 직후 이어진 호출은 UA로 표시). 클라이언트가 보낸 문자열은 `JSON.stringify`로 감싸 로그 줄 주입을 막음. 웹 대시보드에 에이전트 화면은 아직 없음 |
 | "Agent들이 이 CLI 쓰기 편하게" | `list --json`에 `inputSchema`, `help <tool> --format json`, `--format json`(한 줄 `{"ok","tool","exit_code","result"}`, 인자 누락은 종료 코드 2 + `error`/`usage`), `JARVIS_AGENT`/`CLAUDECODE`로 CLI 호출을 `[AGENT] [cli]`로 기록 | `--json`은 이미 "인자를 JSON으로" 의미라 출력 형식은 `--format json`으로 분리. 업데이트 질문·색·스피너는 사람이 여는 입력창에서만 |
 | "설치 완료되면 설치한 버전과 jarvis 소개가 있어야" | `jarvis about`(버전 + 소개 5줄 + 설정 폴더 + 문서 링크), 첫 실행 안내에 같은 소개. README 설치 명령을 `… && jarvis about`으로 | **실험으로 확인:** npm 11.16은 설치 후 스크립트를 기본 실행하지 않고(`allow-scripts` 경고) 출력도 숨긴다 → `postinstall`로는 불가능하고 경고만 늘어난다 |
+
+## v0.8.1 — 화면을 지워도 Jarvis 헤더가 남게
+
+| 요청 | 한 일 | 함정/결정 |
+|---|---|---|
+| "클리어를 하면 이게 뭔 서비스인지도 모르겠다, 다 사라져서" | `/clear`·`clear`·`cls`·Ctrl+L 뒤에 로고·버전·`N tools · folders · policy · MCP server` 줄을 다시 그린다(`bannerText`, `statusLine`, `clearScreen`). Ctrl+L은 readline이 자체 처리하므로 `ask()`의 `onClear` 옵션으로 헤더 + 상태 줄 + 입력 중이던 글자를 다시 그림 | 단위 테스트는 Ctrl+L(가짜 TTY)만 검증했다. `/clear`의 실제 터미널 모양은 눈으로 확인하지 못했다(TTY는 실제 터미널에서 확인해야 한다는 기존 교훈) |

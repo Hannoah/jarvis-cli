@@ -88,3 +88,23 @@ test("ask: the footer (bottom border of the input box) is there from the first f
   assert.equal(await p, "x");
   assert.ok(written.lastIndexOf(`${String.fromCharCode(27)}[0J`) > at, "footer cleared after Enter");
 });
+
+test("ask: Ctrl+L clears the screen and draws the header again above the prompt, keeping what was typed", async () => {
+  const { ask } = await import("../src/tui.js");
+  const input = Object.assign(new PassThrough(), { isTTY: true, setRawMode() { return this; } });
+  const output = Object.assign(new PassThrough(), { isTTY: true, columns: 80 });
+  let written = "";
+  output.on("data", (d: Buffer) => (written += d.toString()));
+  const p = ask("> ", { onClear: () => "HEADER-LINE" }, { input: input as never, output: output as never });
+  await new Promise((r) => setTimeout(r, 30));
+  input.write("abc");
+  await new Promise((r) => setTimeout(r, 30));
+  const before = written.length;
+  input.write("\x0c"); // Ctrl+L
+  await new Promise((r) => setTimeout(r, 60));
+  const after = written.slice(before);
+  assert.ok(after.includes("HEADER-LINE"), "header redrawn");
+  assert.ok(after.indexOf("HEADER-LINE") < after.lastIndexOf("> abc"), "prompt and the typed text come after the header");
+  input.write("\r");
+  assert.equal(await p, "abc");
+});
