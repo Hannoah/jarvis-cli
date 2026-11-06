@@ -103,3 +103,9 @@
 | 요청 | 한 일 | 함정/결정 |
 |---|---|---|
 | "버전업이 있었던 경우에는 처음 jarvis 호출하면 물어보고, 한다고 하면 업그레이드 진행" | 질문 시점을 입력창에서 **터미널의 모든 첫 명령**으로 넓힘(`main()`에서 `shouldAskAboutUpdate`). `Update now`면 설치 후 **같은 인자로 새 버전을 다시 실행**(`spawnSync(process.execPath, [ENTRY, …args])`, 무한 반복을 막으려 자식에는 `JARVIS_NO_UPDATE_CHECK=1`). 릴리스 확인 주기를 24시간에서 1시간으로(스누즈 "Later"는 그대로 하루) | 파이프·스크립트·에이전트(`--format json`/`--raw`)·`serve`·`update`·`version`·`help`·`completion`은 절대 묻지 않는다(자동 시작 작업이나 에이전트가 멈추면 안 된다). **질문→설치→이어서 실행의 전 과정은 실제 TTY로 돌려 보지 못했다**(판단 함수 단위 테스트와, 설치 단계는 `jarvis update`로 임시 폴더에서 확인한 것뿐) |
+
+## 문서 갱신 — "README.md에 이 MCP Server가 왜 좋은지 + 원격 PC 핸들링 강점 추가"
+
+| 요청 | 한 일 | 함정/결정 |
+|---|---|---|
+| "README.md에 이 MCP Server가 왜 좋은지도 적어줘 그리고 사실 가장큰 강점은 MS 코파일럿 같은 클라이언트에 MCP만 연결해 놓으면 원격으로 내 PC를 마음껏 핸들링할 수 있다는 점임" | ① `## 왜 Jarvis MCP Server인가?` 섹션 추가: MS Copilot(Copilot Studio) 연동을 통한 원격 PC 핸들링(킬러 기능), 39개 로컬 도구, 샌드박스/롤백 안전장치, 1 PC 1 Identity 영구 신원, 2-in-1 모드 기술. ② `## MCP 서버로 쓰기`에 스마트폰/외부 기기에서의 원격 제어 활용 시나리오(파일/문서 요약, 빌드/테스트/Git, 백그라운드 작업 등) TIP 블록 추가. | README 수정 후 41개 테스트 전체 통과 확인, GitHub `main`에 커밋 및 푸시 완료 |
