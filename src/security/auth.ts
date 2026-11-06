@@ -14,7 +14,7 @@ import { readEnvFile, type Config } from "../core/config.js";
 import { writeFileAtomic } from "../files/fsutil.js";
 import { VERSION } from "../core/version.js";
 
-export const DEFAULT_CLIENT_ID = "pc-mcp-client";
+export const DEFAULT_CLIENT_ID = "jarvis"; // never checked by the server: clients registered under the old "pc-mcp-client" keep working
 const ACCESS_TOKEN_TTL = 365 * 86400; // 1 year: avoids daily disconnects
 const REFRESH_TOKEN_TTL = 365 * 86400;
 const AUTH_CODE_TTL = 600;

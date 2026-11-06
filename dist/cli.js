@@ -17,6 +17,7 @@ import { createMcpServer } from "./server/mcp.js";
 import { loadPlugins } from "./server/plugins.js";
 import { psExecutable } from "./security/policy.js";
 import { SERVER_CMDS, serverCommand } from "./serverCmd.js";
+import { launchNotice, offerUpdate, updateCommand } from "./update.js";
 import { updateEnvFile } from "./supervisor/settings.js";
 import { enrichEnv, which } from "./system/cliEnv.js";
 import { openDefault } from "./system/platform.js";
@@ -31,6 +32,7 @@ ${c.dim("Usage")}
   jarvis ${c.cyan("help")} <tool>            parameters and usage  (also: jarvis <tool> --help)
   jarvis ${c.cyan("shell")}                  same as plain \`jarvis\` (also reads commands from a pipe)
   jarvis ${c.cyan("completion")} <powershell|bash>   print a completion script
+  jarvis ${c.cyan("update")}                 look for a newer release on GitHub and install it (the prompt also offers it once a day)
 
 ${c.dim("MCP server")}  (for Copilot Studio, Claude, Cursor, ...)
   jarvis ${c.cyan("start")} [--no-tunnel] [--no-open]   MCP server + Dev Tunnel + web dashboard, supervised (Ctrl+C stops)
@@ -99,10 +101,10 @@ function list(tools, rest) {
         console.error(c.yellow(`No tool matches '${q}'.`));
 }
 const completion = (shell, names) => shell === "bash"
-    ? `complete -W "list help shell completion ${SERVER_CMDS.join(" ")} ${names.join(" ")}" jarvis`
+    ? `complete -W "list help shell completion update ${SERVER_CMDS.join(" ")} ${names.join(" ")}" jarvis`
     : `Register-ArgumentCompleter -Native -CommandName jarvis -ScriptBlock {
   param($word, $ast, $pos)
-  '${["list", "help", "shell", "completion", ...SERVER_CMDS, ...names].join("','")}' -split ',' | Where-Object { $_ -like "$word*" } |
+  '${["list", "help", "shell", "completion", "update", ...SERVER_CMDS, ...names].join("','")}' -split ',' | Where-Object { $_ -like "$word*" } |
     ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }
 }`;
 /** Call a tool and print its result. Returns the process exit code. In the prompt each call is drawn as a small card. */
@@ -463,7 +465,7 @@ async function shell(client, tools, ctx) {
                 "",
                 "  From your shell (not this prompt):",
                 "    jarvis start | serve | open | url | install | uninstall    MCP server, tunnel, dashboard",
-                "    jarvis list | help <tool> | completion <powershell|bash>",
+                "    jarvis list | help <tool> | completion <powershell|bash> | update",
             ].map((l) => c.dim(l)).join("\n")),
         },
         "/clear": { hint: "Clear the screen", run: async () => void console.clear() },
@@ -543,6 +545,10 @@ async function shell(client, tools, ctx) {
     }
     interactive = true;
     setTitle();
+    const serverUp = () => portOpen(ctx.cfg.port);
+    const noUpdates = !!(process.env.JARVIS_NO_UPDATE_CHECK || readEnvFile(ctx.cfg.envFile).JARVIS_NO_UPDATE_CHECK) || fs.existsSync(path.join(appDir, ".git")); // a source checkout updates with git
+    if (!noUpdates)
+        await offerUpdate(ctx.cfg.dataDir, VERSION, serverUp);
     const TIPS = [
         "Type / for the command menu, or just start typing a tool name.",
         "!git status runs a shell command through the same sandbox and policy.",
@@ -562,7 +568,10 @@ async function shell(client, tools, ctx) {
     else
         console.log(c.bold(c.accent("\n  ◆ JARVIS")));
     console.log(c.gray(`  v${VERSION}  ·  ${shortPath(ctx.cfg.defaultWorkdir, home, Math.max(10, cols() - 24))}`));
-    console.log(`${c.gray(`  ${tools.length} tools · ${nDirs} folder${nDirs === 1 ? "" : "s"} · ${policy()} · MCP `)}${mcpUp0 ? c.green("● running") : c.gray("○ stopped")}`);
+    console.log(`${c.gray(`  ${tools.length} tools · ${nDirs} folder${nDirs === 1 ? "" : "s"} · ${policy()} · MCP server `)}${mcpUp0 ? c.green("● running") : c.gray("○ stopped")}`);
+    const notice = launchNotice(ctx.cfg.dataDir, VERSION, { hadSettings: fs.existsSync(ctx.cfg.envFile), settingsDir: shortPath(ctx.cfg.dataDir, home, Math.max(10, cols() - 70)), serverUp: mcpUp0 });
+    if (notice)
+        console.log(notice.join("\n") + "\n");
     console.log(c.gray(truncate(`  tip: ${TIPS[Math.floor(Math.random() * TIPS.length)]}`, cols())) + "\n");
     /** Live suggestions under the input: slash commands, tool names, or the usage of the tool being typed. */
     const suggestFor = (line) => {
@@ -586,21 +595,13 @@ async function shell(client, tools, ctx) {
     };
     let armed = false; // first Ctrl+C only warns
     for (;;) {
-        // input box: the top border is a status line (folder, MCP state, access policy), the bottom border lists the main commands
+        // no frame around the input: one status line above it (folder, MCP server state, access policy), the main commands below it
         const up = await portOpen(ctx.cfg.port);
-        const W = Math.max(40, Math.min(cols(), 110));
-        const folder = shortPath(ctx.cfg.defaultWorkdir, home, Math.max(10, W - 48));
+        const folder = shortPath(ctx.cfg.defaultWorkdir, home, Math.max(10, Math.min(cols(), 110) - 52));
         const bits = [policy(), ...(ctx.cfg.enableWrite ? [] : ["write off"]), ...(ctx.cfg.enableRead ? [] : ["read off"])].join(" · ");
-        const state = up ? "running" : "stopped";
-        const wide = (t) => (t.match(/[…·●○]/g) ?? []).length; // East Asian terminals draw these two cells wide: leave room
-        const fill = W - wide(`${folder}${bits}·●`) - folder.length - (state.length + bits.length + 9) - 8;
-        const top = fill >= 2
-            ? c.gray("╭─ ") + c.bold(folder) + c.gray(` ${"─".repeat(fill)} MCP `) + (up ? c.green("●") : c.gray("○")) + c.gray(` ${state} · ${bits} ─╮`)
-            : c.gray("╭─ ") + c.bold(folder) + c.gray(` ${"─".repeat(Math.max(2, W - folder.length - 6))}╮`);
-        const keys = truncate("/ menu · /help · /status · /mcp · /permissions · /theme · /exit", Math.max(10, W - 8));
-        const bottom = c.gray(`╰─ ${keys} ${"─".repeat(Math.max(2, W - wide(keys) - keys.length - 5))}╯`);
-        console.log(top);
-        const line = await ask(c.gray("│ ") + c.accent("❯ "), { history: hist, completer, suggest: suggestFor, footer: bottom });
+        console.log(`${c.bold(folder)}${c.gray("  ·  MCP server ")}${up ? c.green("● running") : c.gray("○ stopped")}${c.gray(`  ·  ${bits}`)}`);
+        const keys = c.gray(truncate("/ menu · /help · /status · /mcp · /permissions · /theme · /exit", Math.max(10, cols() - 2)));
+        const line = await ask(c.accent("❯ "), { history: hist, completer, suggest: suggestFor, footer: keys });
         if (line === null)
             break;
         if (line === SIGINT) {
@@ -617,6 +618,9 @@ async function shell(client, tools, ctx) {
             break;
         console.log();
     }
+    // leaving the prompt does not stop the server: it runs on its own in the background
+    if (await portOpen(ctx.cfg.port))
+        console.log(c.dim("The MCP server is still running in the background. Stop it with: jarvis stop"));
 }
 async function main() {
     const raw = process.argv.includes("--raw") || (!isTTY && !process.env.FORCE_COLOR); // FORCE_COLOR = "treat me as a terminal"
@@ -628,13 +632,17 @@ async function main() {
         return console.log(HELP), 0;
     if (SERVER_CMDS.includes(cmd))
         return serverCommand(cmd, argv, ENTRY);
+    if (cmd === "update") {
+        const { dataDir } = prepareDataDir();
+        return updateCommand(dataDir, VERSION, () => portOpen(loadConfig({ projectDir: appDir, dataDir }).port));
+    }
     const { dataDir } = prepareDataDir();
     const ctx = createCtx(loadConfig({ projectDir: appDir, dataDir }));
     setTheme(readEnvFile(ctx.cfg.envFile).JARVIS_THEME ?? process.env.JARVIS_THEME ?? "blue");
     const cwd = realResolve(process.cwd());
     if (isResolvedPathAllowed(ctx.cfg, cwd))
         ctx.cfg.defaultWorkdir = cwd; // CLI: relative paths mean "here", when "here" is allowed
-    Object.assign(process.env, enrichEnv(process.env, ctx.cfg.home));
+    Object.assign(process.env, enrichEnv(process.env, ctx.cfg.home, readEnvFile(ctx.cfg.envFile)));
     await loadPlugins(ctx);
     const [a, b] = InMemoryTransport.createLinkedPair();
     await createMcpServer(ctx).connect(a);

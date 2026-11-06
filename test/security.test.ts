@@ -140,3 +140,11 @@ test("command policy: allowlisted commands pass; dynamic, unlisted, outside-sand
   await denied("[System.IO.File]::Delete('x')", /Static .NET call not allowed/);
   await denied("git status; Write-Output (1+", /parse error/i);
 });
+
+test("enrichEnv: tool settings come from the settings file, other keys (the API key) do not", async () => {
+  const { enrichEnv } = await import("../src/system/cliEnv.js");
+  const out = enrichEnv({ KUBECONFIG: "from-env" }, os.tmpdir(), { KUBECONFIG: " from-file ", VIYA_CLI_DIR: "X", PC_MCP_API_KEY: "secret" });
+  assert.equal(out.KUBECONFIG, "from-file"); // the settings file wins, like every other setting
+  assert.equal(out.VIYA_CLI_DIR, "X");
+  assert.equal(out.PC_MCP_API_KEY, undefined);
+});

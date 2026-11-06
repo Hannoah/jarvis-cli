@@ -9,6 +9,7 @@ import path from "node:path";
 import { c } from "./cliutil.js";
 import { expandPath, loadConfig, readEnvFile, realResolve } from "./core/config.js";
 import { createCtx } from "./core/context.js";
+import { DEFAULT_CLIENT_ID } from "./security/auth.js";
 import { DEFAULT_ALLOWED_COMMANDS } from "./security/policy.js";
 import { applySettings, readApiKey, regenerateApiKey } from "./supervisor/settings.js";
 import { setClipboard } from "./system/platform.js";
@@ -394,7 +395,7 @@ export async function mcp(cfg, args) {
         row("auth", `header ${c.cyan("X-API-Key: <key>")} ${c.dim("or")} ${c.cyan("Authorization: Bearer <key>")}`);
         const base = best.replace(/\/mcp\/?$/, "");
         console.log(`\n  ${c.bold("OAuth 2.0 (manual), e.g. Copilot Studio")}`);
-        row("client id", "pc-mcp-client");
+        row("client id", DEFAULT_CLIENT_ID);
         row("secret", c.dim("your API key"));
         row("authorize", `${base}/oauth/authorize`);
         row("token", `${base}/oauth/token`);

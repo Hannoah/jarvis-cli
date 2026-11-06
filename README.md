@@ -40,7 +40,7 @@ npm install -g https://github.com/Hannoah/jarvis-cli/archive/refs/heads/main.tar
 jarvis version
 ```
 
-빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 같은 명령을 다시 실행하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.6.1.tar.gz`처럼 태그를 지정하세요.
+빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 `jarvis update`(또는 같은 명령을 다시 실행)로 하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.7.0.tar.gz`처럼 태그를 지정하세요.
 
 > `npm install -g github:Hannoah/jarvis-cli` 형태는 쓰지 마세요. npm 11에서 전역 설치 시 임시 폴더로 링크가 걸려 실행이 깨집니다.
 
@@ -102,6 +102,12 @@ jarvis run_terminal "Get-Date -Format o"
 
 종료 코드: `0` 성공 · `1` 도구 오류(`error` 응답, 0이 아닌 `exit_code` 포함) · `2` 필수 인자 누락.
 
+### 업데이트
+
+GitHub에 새 릴리스가 올라오면 대화형 입력창을 열 때 `Update now / Later / Skip x.y.z`를 물어봅니다. 확인은 하루에 한 번이고 실패해도 조용히 넘어갑니다. 직접 하려면 `jarvis update`, 끄려면 설정 파일에 `JARVIS_NO_UPDATE_CHECK=1`(또는 같은 이름의 환경변수)을 넣습니다. 소스를 clone해서 쓰는 경우(`.git`이 있는 폴더)에는 묻지 않습니다. 설치나 업데이트 뒤 처음 열 때는 시작 안내(설정 폴더, 다음 단계) 또는 변경 내용 링크가 한 번 나옵니다.
+
+API 키·터널 ID·URL은 설정 폴더(`~/.jarvis`)에 있어서 업데이트해도 바뀌지 않습니다. 단, 실행 중인 MCP 서버는 업데이트 전 코드로 계속 돌기 때문에 `jarvis stop` 후 `jarvis start -d`가 필요합니다.
+
 ### 대화형 모드
 
 터미널에서 `jarvis`만 입력하면 입력창이 열립니다. (로고는 실제 터미널에서 테마 색 그라데이션으로 표시됩니다.)
@@ -113,13 +119,13 @@ jarvis run_terminal "Get-Date -Format o"
 ██╗██║██╔══██║██╔══██╗╚██╗ ██╔╝██║╚════██║
 ╚█████╔╝██║  ██║██║  ██║ ╚████╔╝ ██║███████║
  ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚═╝╚══════╝
-  v0.5.0  ·  ~\Work\app
-  39 tools · 4 folders · allowlist · MCP ● running
+  v0.7.0  ·  ~\Work\app
+  39 tools · 4 folders · allowlist · MCP server ● running
   tip: /tools walks you through any tool's parameters, step by step.
 
-╭─ ~\Work\app ─────────────────────── MCP ● running · allowlist ─╮
-│ ❯ read_file package.json 1 2
-╰─ / menu · /help · /status · /mcp · /permissions · /theme · /exit ─╯
+~\Work\app  ·  MCP server ● running  ·  allowlist
+❯ read_file package.json 1 2
+/ menu · /help · /status · /mcp · /permissions · /theme · /exit
 ● read_file  --path package.json --start_line 1 --max_lines 2
 │ path=C:\Work\app\package.json  encoding=utf-8  total_lines=52  start_line=1  end_line=2
 │ {
@@ -132,7 +138,7 @@ jarvis run_terminal "Get-Date -Format o"
 - **`/tools`:** 카테고리 → 도구를 고르면 파라미터를 하나씩 물어보고, 선택 항목은 메뉴에서 추가한 뒤 `▶ Run`으로 실행합니다. 실행된 카드의 헤더에 같은 동작의 한 줄 명령 옵션(`--path ...`)이 표시됩니다.
 - **`!명령`:** Claude Code의 bash 모드처럼 `!git status`는 `run_terminal`로 셸 명령을 실행합니다(샌드박스·명령 정책 동일 적용).
 - **`clear`:** 슬래시 없이 `clear`(또는 `cls`)로 화면을 지웁니다. `help`, `exit`도 슬래시 없이 됩니다. Ctrl+L도 됩니다.
-- **입력 박스:** 위쪽 테두리가 상태 줄입니다(현재 폴더, MCP 서버 ● 실행 중 / ○ 중지, 접근 정책 `allowlist`·`write off` 등, 매번 갱신). 아래쪽 테두리에는 주요 명령이 항상 보입니다.
+- **상태 줄:** 입력창 위 한 줄에 현재 폴더, MCP 서버 ● 실행 중 / ○ 중지, 접근 정책(`allowlist`·`write off` 등)이 매번 갱신되어 나옵니다. 입력창 아래에는 주요 명령이 항상 보이고, 테두리 선은 없습니다. MCP 서버는 입력창과 별개로 백그라운드에서 돌기 때문에 입력창을 종료해도 `● running`일 수 있습니다(끄려면 `/stop` 또는 `jarvis stop`).
 - **입력 중 자동 제안:** `/`나 도구 이름 일부(두 글자 이상)를 입력하면 아래에 일치하는 명령·도구가 설명과 함께 나타나고, `read_file `처럼 도구 이름 뒤에 공백을 넣으면 그 도구의 사용법이 나타납니다. Tab으로 완성합니다.
 - **도구 실행 카드:** 실행하면 `● 도구  --옵션` 헤더, 왼쪽 세로선(`│`)이 붙은 결과, `╰ ✔ 18ms` 결과 줄로 표시됩니다. 0.25초 넘게 걸리면 스피너와 경과 시간이 나옵니다. 목록 표는 크기를 `1.5 KB`처럼 읽기 쉽게 보여주고 폴더를 강조색으로 표시합니다.
 - **메뉴 패널:** 둥근 테두리 패널에서 ↑↓로 이동하고, 글자를 입력하면 필터링되며, 항목이 많으면 `↑ n more`/`↓ n more`와 현재 위치(`3/19`)를 보여줍니다. PgUp/PgDn/Home/End도 됩니다.
@@ -202,7 +208,7 @@ jarvis mcp rotate --yes      # API 키 재발급 (기존 클라이언트는 모�
 ```
 
 - 인증은 `X-API-Key: <키>` 또는 `Authorization: Bearer <키>` 헤더입니다.
-- Copilot Studio처럼 OAuth 2.0(수동)을 쓰는 곳에는 `jarvis mcp`가 보여주는 값을 넣습니다. 클라이언트 ID는 `pc-mcp-client`, 클라이언트 시크릿은 API 키이고, authorize/token 주소는 터널 주소 아래 `/oauth/authorize`, `/oauth/token`입니다.
+- Copilot Studio처럼 OAuth 2.0(수동)을 쓰는 곳에는 `jarvis mcp`가 보여주는 값을 넣습니다. 클라이언트 ID는 `jarvis`(서버는 이 값을 검사하지 않아, 예전 `pc-mcp-client`로 연결해 둔 곳도 그대로 동작), 클라이언트 시크릿은 API 키이고, authorize/token 주소는 터널 주소 아래 `/oauth/authorize`, `/oauth/token`입니다.
 - 입력창에서는 `/mcp`만 입력하면 현재 정보를 보여준 뒤 복사·재발급 메뉴가 열립니다.
 
 ### 승인 폴더·접근 권한·허용 명령
@@ -293,7 +299,18 @@ PC_MCP_ENABLE_TERMINAL=true
 PC_MCP_TERMINAL_MODE=allowlist
 # 허용 목록에 명령 추가 (';' 구분)
 PC_MCP_EXTRA_ALLOWED_COMMANDS=Start-Process;Stop-Process
+
+# 클라우드 CLI 도구 (run_kubectl, run_viya_cli, deploy_viya_status_page). 서버를 재시작하면 적용됩니다.
+# kubectl이 쓸 kubeconfig. 비우면 환경변수 KUBECONFIG, 그다음 ~/.kube/config
+# KUBECONFIG=C:\Users\me\.kube\config
+# JARVIS_DEFAULT_KUBECONFIG=C:\Users\me\clusters\demo-kubeconfig   # KUBECONFIG가 없을 때만 쓰는 기본값
+# sas-viya CLI가 있는 폴더 (PATH에 있으면 필요 없음)
+# VIYA_CLI_DIR=C:\tools\sas-viya
+# deploy_viya_status_page가 deploy.sh를 실행할 폴더
+# JARVIS_STATUS_DEPLOY_DIR=C:\Users\me\Work\status
 ```
+
+이 네 값은 실제 환경변수로 지정해도 되고, 둘 다 있으면 `.env`가 우선합니다. 어떤 kubeconfig가 잡혔는지는 `jarvis run_kubectl --args status`로 확인합니다.
 
 ## 개발
 

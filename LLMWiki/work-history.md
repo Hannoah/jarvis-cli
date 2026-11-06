@@ -61,3 +61,16 @@
 | 요청 | 한 일 | 함정/결정 |
 |---|---|---|
 | "현재 프로젝트 깊이 살펴봐" → "발견한 거 다 고쳐줘" → "고치면 배포까지 한 번에" | ① **터널 레이트리밋 무력화 수정:** Dev Tunnel이 이 PC에서 접속하므로 인터넷 요청도 루프백으로 보여 제한이 한 번도 걸리지 않았다 → `limitKey()`가 루프백이라도 `x-forwarded-*` 헤더가 있으면 `tunnel` 버킷 하나로 센다. ② 개인 경로(`Work/02_SAS_Demos…`, KubeConfig 경로)와 한국어 안내를 도구에서 제거(`VIYA_CLI_DIR`, `JARVIS_STATUS_DEPLOY_DIR`, `JARVIS_DEFAULT_KUBECONFIG`로만 지정). ③ `test/security.test.ts` 추가(샌드박스, 레이트리밋, HTTP 인증, OAuth+PKCE, PowerShell AST 정책). ④ `jarvis-ts` 이름 잔재 정리, OAuth 동의 페이지의 `data/.env` 안내 수정. ⑤ 플러그인 폴더를 설치 폴더에서 **설정 폴더의 `custom_tools/`**로. ⑥ `cli.ts`에서 서버 명령을 `serverCmd.ts`로 분리 | 레이트리밋 수정은 **헤더가 실제로 붙는다는 가정**이다(OAuth 메타데이터가 `x-forwarded-host/proto`를 이미 쓰고 있어 터널이 붙이는 것은 확인됐지만, 실제 터널 경유 호출로 429를 확인하지는 못했다). 모든 터널 클라이언트가 분당 300회를 나눠 쓴다. 플러그인을 설치 폴더에 두고 쓰던 사람은 설정 폴더로 옮겨야 한다. 기본 허용 폴더(`~/Work` 등)는 README에 문서화된 동작이라 그대로 뒀다 |
+
+## v0.7.0 — 업데이트 확인, 설치 완료 메시지, 입력창 테두리 제거
+
+| 요청 | 한 일 | 함정/결정 |
+|---|---|---|
+| "첫 실행 때 최신 버전이 있으면 업데이트할지 물어보기" | `src/update.ts`: 하루 한 번 GitHub `releases/latest`를 조회(2.5초 타임아웃, 실패는 조용히), 대화형 입력창 첫 화면에서 `Update now / Later / Skip x.y.z`. `jarvis update`로 수동 실행. `npm install -g <tarball>`을 실행하고 끝나면 프로세스를 종료(설치 폴더의 파일이 바뀌었으므로). 끄기: `JARVIS_NO_UPDATE_CHECK`, `.git`이 있는 소스 체크아웃에서는 묻지 않음 | 조회는 `fetch`가 아니라 `node:https`(`agent:false`): 연결이 남은 채 `process.exit`을 부르면 Windows에서 libuv가 죽은 전례. 건너뜀/나중에는 `~/.jarvis/.update_check.json`에 저장 |
+| "설치 완료됐을 때 나오는 메시지들 신경 써줘" | 설치·업데이트 뒤 **처음 실행**에 한 번: 새로 설치면 시작 안내(설정 폴더, `/help`, `jarvis start -d`), 업데이트면 `x → y`와 릴리스 링크, 서버가 떠 있으면 재시작 안내. `jarvis update` 완료 메시지, `jarvis install/uninstall` 결과에 다음 할 일을 덧붙임 | npm은 전역 설치의 postinstall 출력을 숨기므로 설치 직후에는 문구를 낼 수 없다 → 첫 실행 시점에 보여준다(`seenVersion`) |
+| "Jarvis 꺼도 MCP 서버가 running으로 나온다" | 원인: 표시는 **서버**(8765) 상태이고 입력창과 별개의 백그라운드 프로세스다. 입력창을 종료해도 서버는 계속 돈다. 라벨을 `MCP server`로 바꾸고, 종료 시 서버가 아직 떠 있으면 `jarvis stop` 안내를 출력 | 당시 8765/8766은 실제로 jarvis-cli 감시 프로세스(19:12 시작)가 잡고 있었다. 사용자의 서비스라 중지하지 않았다 |
+| "입력창을 둘러싼 선 없애" | 상자(`╭╮│╰╯`)를 없애고 입력창 위에 상태 한 줄, 아래에 주요 명령 한 줄 | 도구 실행 카드의 `│`/`╰`는 입력창이 아니므로 유지 |
+| "클라이언트 ID가 촌스러움" | `pc-mcp-client` → `jarvis` | 서버는 `client_id`를 검사하지 않아 예전 값으로 연결해 둔 곳도 그대로 동작 |
+| `.env`에서 kubeconfig 등 지정 | `KUBECONFIG`, `JARVIS_DEFAULT_KUBECONFIG`, `VIYA_CLI_DIR`, `JARVIS_STATUS_DEPLOY_DIR`를 설정 파일에서 읽음(이 네 개만 `process.env`로 올린다) | v0.6.1에서 개인 경로 기본값을 없앴더니 지정할 방법이 환경변수뿐이었다. `.env` 전체를 올리면 API 키가 `run_terminal`이 띄우는 명령에 상속되므로 허용 목록으로만 올림 |
+
+**관측(미해결):** 이 PC에는 설정 폴더가 둘이다. `jarvis-ts/data`와 `~/.jarvis`는 API 키·터널 ID가 서로 다르다. 예전에 jarvis-ts의 URL/키로 외부 클라이언트를 설정했다면 jarvis-cli로 옮긴 뒤 끊긴다. 합치려면 한쪽의 `PC_MCP_API_KEY`·`PC_MCP_DEVTUNNEL_ID`를 다른 쪽 `.env`로 옮기고 서버를 재시작해야 한다(사용자 확인 필요).

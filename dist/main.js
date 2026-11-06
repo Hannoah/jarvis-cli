@@ -1,5 +1,5 @@
 import { getOrCreateApiKey, maskSecret } from "./security/auth.js";
-import { loadConfig } from "./core/config.js";
+import { loadConfig, readEnvFile } from "./core/config.js";
 import { createCtx } from "./core/context.js";
 import { installFatalHandlers } from "./core/fatal.js";
 installFatalHandlers("server");
@@ -12,7 +12,7 @@ import { VERSION } from "./core/version.js";
 const { dataDir } = prepareDataDir();
 const cfg = loadConfig({ projectDir: appDir, dataDir });
 const ctx = createCtx(cfg);
-Object.assign(process.env, enrichEnv(process.env, cfg.home)); // PATH/KUBECONFIG for run_terminal and the CLI tools
+Object.assign(process.env, enrichEnv(process.env, cfg.home, readEnvFile(cfg.envFile))); // PATH/KUBECONFIG for run_terminal and the CLI tools
 await loadPlugins(ctx);
 const apiKey = getOrCreateApiKey(cfg);
 // Bind loopback only: the Dev Tunnel connects locally, so nothing else needs to reach this port.

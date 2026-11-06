@@ -56,6 +56,11 @@ export async function serverCommand(cmd: string, argv: string[], entry: string):
       const input = { node: process.execPath, entry, projectDir: dataDir, home: os.homedir() };
       const r = cmd === "install" ? install(input) : uninstall(input);
       console.log(r.ok ? c.green(`✔ ${r.message}`) : c.red(`✖ ${r.message}`));
+      if (r.ok) {
+        console.log(c.gray(cmd === "install"
+          ? "  Jarvis will start by itself at your next login.\n  Start it now: jarvis start -d   ·   check: jarvis status   ·   undo: jarvis uninstall"
+          : "  Jarvis will no longer start at login. A server that is running keeps running: jarvis stop"));
+      }
       return r.ok ? 0 : 1;
     }
 
