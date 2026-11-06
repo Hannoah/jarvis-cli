@@ -143,7 +143,7 @@ function guardsOf(cfg) {
             secrets: [".env", ".oauth_tokens.json", ".dashboard_token"].map((r) => realResolve(path.join(cfg.dataDir, r))),
             states: ["audit.log", ".backups", ".scheduled"]
                 .map((r) => realResolve(path.join(cfg.dataDir, r)))
-                .concat(realResolve(path.join(cfg.projectDir, "custom_tools"))),
+                .concat(realResolve(path.join(cfg.dataDir, "custom_tools"))),
         };
         guardCache.set(cfg, g);
     }

@@ -20,6 +20,9 @@ jarvis-cli는 같은 도구를 두 가지로 쓰게 만든 공개 CLI다.
 | `src/main.ts` | `prepareDataDir()`가 마이그레이션 결과를 돌려주지 않는 것에 맞춤 |
 | `src/supervisor/dashboard.ts` | `POST /api/shutdown` 추가(`DashboardDeps.shutdown`). 이 파일은 **UTF-8이 아닌 바이트**가 있어 편집 도구가 거부한다 → 바이트 단위로 수정 |
 | `src/supervisor/index.ts` | `stopAll()`을 만들어 `stop()`과 `shutdown`이 같이 쓰게 함 |
+| `src/server/http.ts` | `limitKey()`: 터널 트래픽(루프백 + `x-forwarded-*`)도 레이트리밋 |
+| `src/server/plugins.ts`, `src/core/config.ts` | `custom_tools/`가 설치 폴더가 아니라 설정 폴더 기준 |
+| `src/tools/enterprise.ts`, `src/system/cliEnv.ts` | 개인 경로 기본값 제거(`VIYA_CLI_DIR`, `JARVIS_STATUS_DEPLOY_DIR`, `JARVIS_DEFAULT_KUBECONFIG`), 안내 문구 영어 |
 
 원본 `jarvis-ts`와 달리 `jarvis-cli`에는 `cli.ts` 외 진입점이 없다. `serve`는 `main.ts`를 import하고, supervisor는 `main.js`(빌드된 경우)를 자식 프로세스로 띄운다.
 

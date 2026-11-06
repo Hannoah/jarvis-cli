@@ -25,7 +25,7 @@ interface CliSpec {
 }
 
 function catalog(home: string): Record<string, CliSpec> {
-  const viyaDir = process.env.VIYA_CLI_DIR ?? path.join(home, "Work/02_SAS_Demos/SAS-Viya-Platform-Administration/tools");
+  const viyaDirs = process.env.VIYA_CLI_DIR ? [process.env.VIYA_CLI_DIR] : []; // sas-viya has no standard install folder: set VIYA_CLI_DIR or put it on PATH
   const gitBins = isWin
     ? [path.join(home, "AppData/Local/Programs/Git/usr/bin"), path.join(home, "AppData/Local/Programs/Git/bin"), "C:/Program Files/Git/usr/bin", "C:/Program Files/Git/bin"]
     : ["/usr/bin", "/bin"];
@@ -55,8 +55,8 @@ function catalog(home: string): Record<string, CliSpec> {
     "sas-viya": {
       display: "SAS Viya Platform CLI (sas-viya)",
       binaries: isWin ? ["sas-viya.exe", "sas-viya.cmd"] : ["sas-viya"],
-      dirs: [viyaDir, path.join(home, "Work/SAS-Viya-Platform-Administration/tools")],
-      install: "SAS Viya Operations Center에서 sas-viya 다운로드 후 PATH 또는 VIYA_CLI_DIR 환경변수 지정",
+      dirs: viyaDirs,
+      install: "Download sas-viya from SAS Viya Operations Center, then add it to PATH or set VIYA_CLI_DIR",
       url: "https://go.documentation.sas.com/doc/en/sasadmincdc/default/calcli/titlepage.htm",
     },
     sh: {
@@ -150,13 +150,13 @@ export function registerEnterpriseTools(mcp: McpServer, ctx: Ctx): void {
       cli: key,
       display_name: spec.display,
       command: attempted,
-      error: `현재 PC에 '${spec.display}' 도구가 설치되어 있지 않아 명령을 실행할 수 없습니다.`,
+      error: `'${spec.display}' is not installed on this PC, so the command cannot run.`,
       install_command: spec.install,
       install_url: spec.url,
       can_auto_install_via_terminal: canWinget,
       ai_guidance:
-        `사용자에게 현재 PC에 ${spec.display}가 설치되어 있지 않음을 안내하세요. ` +
-        (canWinget ? `사용자가 원하면 \`run_terminal\` 도구로 \`${spec.install}\` 명령을 실행해 즉시 자동 설치할 수 있습니다.` : `설치 안내: ${spec.install} (${spec.url})`),
+        `Tell the user that ${spec.display} is not installed on this PC. ` +
+        (canWinget ? `If they want, install it right away by running \`${spec.install}\` with the \`run_terminal\` tool.` : `How to install: ${spec.install} (${spec.url})`),
     };
   };
 
@@ -242,13 +242,13 @@ export function registerEnterpriseTools(mcp: McpServer, ctx: Ctx): void {
       if (!kubectl) return json(missing("kubectl", "deploy_viya_status_page"));
       const sh = resolveCli("sh");
       if (!sh) return json(missing("sh", "sh deploy.sh"));
-      const dir = process.env.JARVIS_STATUS_DEPLOY_DIR ?? path.join(cfg.home, "Work/02_SAS_Demos/SAS-Viya-MCP-Server(official)/status");
-      if (!fs.existsSync(dir)) {
+      const dir = process.env.JARVIS_STATUS_DEPLOY_DIR ?? "";
+      if (!dir || !fs.existsSync(dir)) {
         return json({
           success: false,
           installed: false,
-          error: `배포 대상 프로젝트 폴더를 찾을 수 없습니다: ${dir}`,
-          ai_guidance: "JARVIS_STATUS_DEPLOY_DIR 환경변수를 설정하거나 해당 프로젝트 저장소가 클론되어 있는지 확인하세요.",
+          error: dir ? `Deploy project folder not found: ${dir}` : "JARVIS_STATUS_DEPLOY_DIR is not set.",
+          ai_guidance: "Set JARVIS_STATUS_DEPLOY_DIR to the folder that contains deploy.sh (clone the project first if needed).",
         });
       }
       audit("deploy_viya_status_page", "ALLOW", `${dry_run ? "dry-run" : "deploy"} in ${dir}`);

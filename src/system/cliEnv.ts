@@ -6,7 +6,7 @@ const isWin = process.platform === "win32";
 
 /** Directories where the CLIs this server wraps (Git, Azure, Power Platform, kubectl, ...) usually live. */
 function extraDirs(home: string): string[] {
-  const d = process.env.VIYA_CLI_DIR ?? path.join(home, "Work/02_SAS_Demos/SAS-Viya-Platform-Administration/tools");
+  const d = process.env.VIYA_CLI_DIR ?? ""; // fs.existsSync("") is false, so an unset variable adds nothing
   if (isWin) {
     return [
       d,
@@ -36,7 +36,6 @@ export function enrichEnv(env: NodeJS.ProcessEnv, home: string): NodeJS.ProcessE
   if (!out.KUBECONFIG) {
     const cands = [
       process.env.JARVIS_DEFAULT_KUBECONFIG,
-      path.join(home, "Work/07_Operations/01_System_Automation/SAS Viya Engage KubeConfig/sas-demos/sas-demos-kubeConfig"),
       path.join(home, ".kube/config"),
     ].filter(Boolean) as string[];
     const found = cands.find((c) => fs.existsSync(c));

@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 export async function loadPlugins(ctx) {
-    const dir = path.join(ctx.cfg.projectDir, "custom_tools");
+    const dir = path.join(ctx.cfg.dataDir, "custom_tools"); // in the settings folder, not the install folder, so upgrades keep it
     if (!fs.existsSync(dir))
         return;
     for (const file of fs.readdirSync(dir).filter((f) => /\.(mjs|js)$/.test(f) && !f.startsWith("_")).sort()) {

@@ -20,12 +20,13 @@ Jarvis(jarvis-ts)의 도구 39개를 **터미널 명령**과 **로컬 MCP 서버
 5. [release-runbook](release-runbook.md) — 배포 절차 (커밋 → push → 릴리스 → 설치 검증)
 
 ## 현재 상태 (2026-11-06)
-- 최신 릴리스 **v0.6.0** — 도구 직접 실행 CLI, 인터랙티브 입력창(상태 줄·자동 제안·메뉴 패널·도구 카드·테마), MCP 서버 제어(start -d / stop / restart / status / tunnel), MCP 연결 정보, 승인 폴더·권한·allowlist 관리.
-- 테스트 18개 통과(`npm test`). 도구 39개.
+- 최신 릴리스 **v0.6.1**(점검에서 나온 문제 수정) ·  기능은 v0.6.0 — 도구 직접 실행 CLI, 인터랙티브 입력창(상태 줄·자동 제안·메뉴 패널·도구 카드·테마), MCP 서버 제어(start -d / stop / restart / status / tunnel), MCP 연결 정보, 승인 폴더·권한·allowlist 관리.
+- 테스트 24개 통과(`npm test`). 도구 39개.
 - 사용자의 PC에서는 **jarvis-ts가 같은 포트(8765/8766)로 이미 실행 중**이다. 서버 관련 시험은 반드시 임시 설정 폴더와 임시 포트로 한다 → [testing-and-pitfalls](testing-and-pitfalls.md).
 - 설치는 **tarball URL**로만 안내한다(`npm install -g github:...`는 npm 11에서 깨짐).
 
 ## 남은 것 (열린 항목)
+0. **터널 경유 레이트리밋(v0.6.1)을 실제 터널로 확인하지 못했다.** 헤더가 붙는다는 가정이다. 터널을 켠 상태에서 외부에서 301회 이상 호출해 429가 나는지 볼 것.
 1. **Dev Tunnel을 켠 외부 접속 end-to-end 미검증.** 터널 코드는 jarvis-ts 것 그대로이고 `jarvis tunnel`은 가짜 대시보드로만 시험했다.
 2. **터널이 스스로 복구하지 못하는 문제(관측됨, 미해결).** 사용자 환경에서 2026-11-05 21:21경 `403 Proxy Token Expired`가 반복되고 감시 프로세스가 "more than 5 restarts in 10 min"으로 포기한 뒤 `error` 상태로 남았다. 지금은 `jarvis tunnel restart`로 수동 복구. 개선 아이디어: 포기 후 몇 분 뒤 재시도, 또는 토큰 만료를 감지해 호스트를 다시 띄우기 (코드는 `src/supervisor/tunnel.ts`).
 3. `jarvis install`(로그인 시 자동 시작) 미검증 — 시스템 설정을 바꾸므로 시험을 미뤘다.
@@ -36,5 +37,5 @@ Jarvis(jarvis-ts)의 도구 39개를 **터미널 명령**과 **로컬 MCP 서버
 
 ## 코드 위치 (코드만 봐서는 안 보이는 것만)
 - `src/{core,files,security,system,tools}`, `src/server/{mcp,plugins,http}.ts`, `src/supervisor/`, `src/main.ts` — **jarvis-ts에서 복사한 코드**. 자동 동기화가 없다. 우리가 고친 파일 목록은 [project-context](project-context.md).
-- `src/cli.ts`(진입점·프롬프트), `src/admin.ts`(서버 제어·접근 관리·MCP 정보·터널), `src/cliutil.ts`(인자 파싱·렌더링·색/테마, 순수 함수), `src/tui.ts`(메뉴·입력·스피너) — 우리가 새로 쓴 코드.
+- `src/cli.ts`(진입점·프롬프트), `src/serverCmd.ts`(start/serve/stop 등 서버 명령), `src/admin.ts`(서버 제어·접근 관리·MCP 정보·터널), `src/cliutil.ts`(인자 파싱·렌더링·색/테마, 순수 함수), `src/tui.ts`(메뉴·입력·스피너) — 우리가 새로 쓴 코드.
 - `dist/` — **커밋 대상**. 소스를 고치면 `npx tsc` 후 함께 커밋(git 설치에는 빌드 도구가 없음).

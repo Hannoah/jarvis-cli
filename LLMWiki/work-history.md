@@ -55,3 +55,9 @@
 |---|---|---|
 | "작업 하던 거 이어서 진행도 하고" | 위 조회에서 사용자 인스턴스의 터널이 `error`였던 것을 읽기 전용으로 조사 → `jarvis tunnel [status\|start\|stop\|restart]`와 `/tunnel`, `status`·`mcp`가 터널 오류와 해결법을 안내 | **관측:** 2026-11-05 21:21경 `403 Proxy Token Expired` 반복 → 터널 호스트가 종료 코드 1로 5회 넘게 재시작 → 감시 프로세스가 포기, `error`로 남음. devtunnel 로그인은 유효했다. 외부 접속(Copilot Studio 등)이 끊겨 있었을 가능성이 크다. **사용자의 실행 중 서비스는 요청 없이 재시작하지 않았다.** 해결 명령만 만들어 안내. 같은 작업 중 `status`가 터널 상태 `running`으로 비교하던 버그 발견(실제 이름은 `online`) → 수정 |
 | "LLMWiki 하나 만들어서 작업 히스토리 관리" | 이 위키(`LLMWiki/`) 생성. 이 PC의 다른 프로젝트 위키 형식(`index` / `project-context` / `work-history` / `decision-log`)을 따름 | 공개 저장소에 올라가므로 토큰·이메일·로컬 경로는 넣지 않았다 |
+
+## v0.6.1 — 프로젝트 정밀 점검에서 나온 문제 일괄 수정
+
+| 요청 | 한 일 | 함정/결정 |
+|---|---|---|
+| "현재 프로젝트 깊이 살펴봐" → "발견한 거 다 고쳐줘" → "고치면 배포까지 한 번에" | ① **터널 레이트리밋 무력화 수정:** Dev Tunnel이 이 PC에서 접속하므로 인터넷 요청도 루프백으로 보여 제한이 한 번도 걸리지 않았다 → `limitKey()`가 루프백이라도 `x-forwarded-*` 헤더가 있으면 `tunnel` 버킷 하나로 센다. ② 개인 경로(`Work/02_SAS_Demos…`, KubeConfig 경로)와 한국어 안내를 도구에서 제거(`VIYA_CLI_DIR`, `JARVIS_STATUS_DEPLOY_DIR`, `JARVIS_DEFAULT_KUBECONFIG`로만 지정). ③ `test/security.test.ts` 추가(샌드박스, 레이트리밋, HTTP 인증, OAuth+PKCE, PowerShell AST 정책). ④ `jarvis-ts` 이름 잔재 정리, OAuth 동의 페이지의 `data/.env` 안내 수정. ⑤ 플러그인 폴더를 설치 폴더에서 **설정 폴더의 `custom_tools/`**로. ⑥ `cli.ts`에서 서버 명령을 `serverCmd.ts`로 분리 | 레이트리밋 수정은 **헤더가 실제로 붙는다는 가정**이다(OAuth 메타데이터가 `x-forwarded-host/proto`를 이미 쓰고 있어 터널이 붙이는 것은 확인됐지만, 실제 터널 경유 호출로 429를 확인하지는 못했다). 모든 터널 클라이언트가 분당 300회를 나눠 쓴다. 플러그인을 설치 폴더에 두고 쓰던 사람은 설정 폴더로 옮겨야 한다. 기본 허용 폴더(`~/Work` 등)는 README에 문서화된 동작이라 그대로 뒀다 |

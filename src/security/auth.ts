@@ -202,7 +202,7 @@ function consentPage(params: Record<string, string>, error = ""): string {
 <h2>Jarvis (PC-MCP) 접근 승인</h2>
 <p>다음 앱이 이 PC의 파일/터미널 접근 권한을 요청합니다.</p>
 <p><b>Redirect 대상:</b> ${escapeHtml(host)}</p>
-<p>본인이 요청한 것이 맞다면 대시보드에 표시된 API Key(또는 <code>data/.env</code>의 <code>PC_MCP_API_KEY</code>)를 입력하세요.</p>
+<p>본인이 요청한 것이 맞다면 대시보드에 표시된 API Key(또는 설정 폴더(<code>~/.jarvis</code>)의 <code>.env</code>에 있는 <code>PC_MCP_API_KEY</code>)를 입력하세요.</p>
 ${err}
 <form method="post" action="/oauth/authorize">
 ${hidden}

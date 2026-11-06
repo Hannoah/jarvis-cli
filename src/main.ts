@@ -20,5 +20,5 @@ const apiKey = getOrCreateApiKey(cfg);
 
 // Bind loopback only: the Dev Tunnel connects locally, so nothing else needs to reach this port.
 createHttpServer(ctx, apiKey).listen(cfg.port, "127.0.0.1", () => {
-  console.log(`jarvis-ts v${VERSION} listening on http://127.0.0.1:${cfg.port}/mcp (api key ${maskSecret(apiKey)})`);
+  console.log(`Jarvis v${VERSION} listening on http://127.0.0.1:${cfg.port}/mcp (api key ${maskSecret(apiKey)})`);
 });

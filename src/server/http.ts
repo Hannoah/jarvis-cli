@@ -1,9 +1,20 @@
-import { createServer, type Server } from "node:http";
+import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createAuth } from "../security/auth.js";
 import { isLoopbackIp, normalizeIp, RateLimiter } from "../security/ratelimit.js";
 import type { Ctx } from "../core/context.js";
 import { createMcpServer } from "./mcp.js";
+
+/**
+ * What to rate-limit by, or null for a genuinely local client. The Dev Tunnel connects from this machine, so tunnel
+ * traffic arrives from a loopback address too; only the forwarding headers the tunnel adds tell it apart from a local MCP
+ * client. All tunnel callers share one bucket (ponytail: per-client buckets would need a trusted X-Forwarded-For).
+ */
+export function limitKey(peer: string, headers: IncomingHttpHeaders): string | null {
+  if (!peer) return null;
+  if (!isLoopbackIp(peer)) return normalizeIp(peer);
+  return ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto"].some((h) => headers[h]) ? "tunnel" : null;
+}
 
 // ponytail: stateless (new transport per request), so no session store to leak or expire.
 export function createHttpServer(ctx: Ctx, apiKey: string, limiter: RateLimiter = new RateLimiter()): Server {
@@ -11,10 +22,11 @@ export function createHttpServer(ctx: Ctx, apiKey: string, limiter: RateLimiter 
   const server = createServer(async (req, res) => {
     try {
       const peer = req.socket.remoteAddress ?? "";
-      if (peer && !isLoopbackIp(peer)) {
-        const v = limiter.take(normalizeIp(peer));
+      const key = limitKey(peer, req.headers);
+      if (key) {
+        const v = limiter.take(key);
         if (!v.allowed) {
-          if (v.audit) ctx.audit("http", "RATE_429", `Rate limit exceeded for ${normalizeIp(peer)}`);
+          if (v.audit) ctx.audit("http", "RATE_429", `Rate limit exceeded for ${key}`);
           res.writeHead(429, { "content-type": "application/json", "retry-after": String(v.retryAfterSec) });
           res.end(JSON.stringify({ error: "Too many requests" }));
           return;
