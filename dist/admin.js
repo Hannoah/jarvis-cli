@@ -31,6 +31,23 @@ const tokenOf = (cfg) => {
     }
 };
 /**
+ * 401 from the dashboard port means a Jarvis dashboard is answering but was started with another settings folder
+ * (typically jarvis-ts, or an earlier start whose token file is stale), so our token is not the one it expects.
+ */
+export const foreignMessage = (cfg) => `A Jarvis dashboard is already answering on port ${dashPort(cfg)} but rejected this settings folder's token.\n` +
+    `  It was started with a different data folder (probably jarvis-ts). Stop it first, or use its folder:\n` +
+    `    PowerShell:  $env:JARVIS_HOME = "<its data folder, e.g. ...\\jarvis-ts\\data>"\n` +
+    `  This command is using: ${cfg.dataDir}`;
+/** "none": nothing on the dashboard port · "ok": it is ours · "foreign": it answers but rejects our token. */
+export async function dashboardAccess(cfg) {
+    try {
+        return (await control(cfg, "GET", "/api/state")) ? "ok" : "none";
+    }
+    catch (e) {
+        return e.foreign ? "foreign" : "none";
+    }
+}
+/**
  * null = nothing answers (no supervisor, or no token yet). HTTP errors throw with the server's message.
  * node:http with agent:false closes the socket after each call: a lingering keep-alive connection made process.exit()
  * crash on Windows ("Assertion failed ... async.c") and would otherwise keep the CLI alive for seconds.
@@ -50,7 +67,9 @@ function control(cfg, method, p) {
                     body = JSON.parse(raw);
                 }
                 catch { /* non-JSON error page */ }
-                if ((res.statusCode ?? 500) >= 400)
+                if (res.statusCode === 401)
+                    reject(Object.assign(new Error(foreignMessage(cfg)), { status: 401, foreign: true }));
+                else if ((res.statusCode ?? 500) >= 400)
                     reject(Object.assign(new Error(body.error ?? `HTTP ${res.statusCode}`), { status: res.statusCode }));
                 else
                     resolve(body);
@@ -83,6 +102,8 @@ export async function status(cfg) {
 export async function startBackground(cfg, entry, flags) {
     if (await control(cfg, "GET", "/api/state"))
         return console.log(c.dim("Already running.")), await status(cfg);
+    if (await portOpen(dashPort(cfg)))
+        return fail(`Port ${dashPort(cfg)} is in use by another program. Change JARVIS_DASHBOARD_PORT in ${cfg.envFile}.`);
     const child = spawn(process.execPath, [...process.execArgv, entry, "start", "--no-open", ...flags], {
         detached: true,
         stdio: "ignore",

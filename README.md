@@ -40,7 +40,7 @@ npm install -g https://github.com/Hannoah/jarvis-cli/archive/refs/heads/main.tar
 jarvis version
 ```
 
-빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 같은 명령을 다시 실행하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.5.0.tar.gz`처럼 태그를 지정하세요.
+빌드된 파일(`dist/`)이 저장소에 들어 있어 별도 빌드가 필요 없습니다. 업데이트는 같은 명령을 다시 실행하고, 제거는 `npm uninstall -g jarvis-cli`입니다. 특정 버전은 `refs/tags/v0.5.1.tar.gz`처럼 태그를 지정하세요.
 
 > `npm install -g github:Hannoah/jarvis-cli` 형태는 쓰지 마세요. npm 11에서 전역 설치 시 임시 폴더로 링크가 걸려 실행이 깨집니다.
 
@@ -230,6 +230,10 @@ jarvis allowlist check "git status"  # 실제 정책으로 검사만 하기 (실
 
 - 포트: MCP `8765`(`/mcp`, API 키 필요), 대시보드 `8766`(이 PC에서만 접속, 토큰 보호). 둘 다 `127.0.0.1`에만 바인딩합니다.
 - 이미 실행 중이면 오류 대신 기존 대시보드를 열어 줍니다.
+- **"rejected this settings folder's token" (예전 `HTTP 401`)**: 같은 포트(8766)에서 **다른 설정 폴더로 시작된 Jarvis**(예: jarvis-ts)가 이미 실행 중이라는 뜻입니다. 그쪽 대시보드는 이 폴더의 토큰을 받아 주지 않습니다. 둘 중 하나로 해결하세요.
+  1. 그 Jarvis를 먼저 끄고 `jarvis start -d`.
+  2. `JARVIS_HOME`을 그 Jarvis의 데이터 폴더로 지정해서 jarvis-cli로 그대로 제어: `jarvis status`, `jarvis mcp`, `jarvis restart`. 단, `jarvis stop`은 jarvis-ts 같은 구버전 감시 프로세스에는 종료 기능이 없어 MCP 서버만 멈추고 창(Ctrl+C)은 직접 닫아야 합니다.
+- 예전에 `jarvis start`가 포트 충돌로 실패하면 설정 폴더에 `.dashboard_token`이 남지만 해롭지 않습니다. 위 안내가 나올 뿐입니다.
 - 외부 접속은 [Dev Tunnel](https://learn.microsoft.com/azure/developer/dev-tunnels/) CLI(`devtunnel`)를 씁니다. 없으면 Windows에서는 winget으로 설치를 시도합니다.
 - 서버 설정·API 키·OAuth 토큰·로그는 설정 폴더(`~/.jarvis`)에 저장됩니다. **jarvis-ts를 이미 쓰고 있다면** 키와 터널 주소가 새로 만들어지지 않도록 같은 폴더를 가리키세요.
   ```powershell

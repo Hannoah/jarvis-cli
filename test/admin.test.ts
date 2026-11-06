@@ -70,3 +70,27 @@ test("stop/status with no supervisor running report 'not running' and succeed", 
   assert.equal(await run(cfg, "stop"), 0);
   assert.equal(await run(cfg, "restart"), 1); // nothing to restart
 });
+
+test("a dashboard that rejects our token gives an explanation instead of a bare HTTP 401", async () => {
+  const http = await import("node:http");
+  const srv = http.createServer((_req, res) => { res.statusCode = 401; res.end("Open the dashboard URL printed by Jarvis"); });
+  await new Promise<void>((r) => srv.listen(0, "127.0.0.1", () => r()));
+  const port = (srv.address() as { port: number }).port;
+  const { cfg } = setup();
+  fs.appendFileSync(cfg.envFile, `JARVIS_DASHBOARD_PORT=${port}\n`);
+  fs.writeFileSync(path.join(cfg.dataDir, ".dashboard_token"), "stale-token"); // left behind by an earlier start that lost the port
+  const errors: string[] = [];
+  const orig = console.error;
+  console.error = (m?: unknown) => void errors.push(String(m));
+  try {
+    for (const name of ["status", "stop", "restart"]) {
+      errors.length = 0;
+      assert.equal(await adminCommand(name, [], cfg), 1, name);
+      assert.match(errors.join("\n"), /rejected this settings folder's token[\s\S]*JARVIS_HOME/, name);
+      assert.doesNotMatch(errors.join("\n"), /^✖ HTTP 401/, name);
+    }
+  } finally {
+    console.error = orig;
+    srv.close();
+  }
+});

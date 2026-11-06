@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { adminCommand, BROAD, row, startBackground, status as liveStatus } from "./admin.js";
+import { adminCommand, BROAD, dashboardAccess, foreignMessage, row, startBackground, status as liveStatus } from "./admin.js";
 import { c, categorize, cmdline, coerce, currentTheme, errorOf, exitCodeOf, gradient, isTTY, parseArgs, propType, render, setTheme, shortPath, suggest, themeNames, themeSwatch, tokenize, toolHelp, truncate, usage, } from "./cliutil.js";
 import { expandPath, isResolvedPathAllowed, loadConfig, readEnvFile, realResolve } from "./core/config.js";
 import { createCtx } from "./core/context.js";
@@ -683,6 +683,9 @@ async function serverCommand(cmd, argv) {
                 const ours = await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(2000) }).then(async (r) => r.status === 401 && (await r.text()).includes("Jarvis"), () => false);
                 if (!ours)
                     throw new Error(`Port ${port} is in use by another program (not this Jarvis). Set JARVIS_DASHBOARD_PORT in ${path.join(dataDir, ".env")}.`);
+                const here = loadConfig({ projectDir: appDir, dataDir });
+                if ((await dashboardAccess(here)) === "foreign")
+                    return console.error(c.red(`✖ ${foreignMessage(here)}`)), 1; // its dashboard would reject our token: opening our URL only shows a 401 page
                 console.log("Jarvis is already running — opening the dashboard.");
                 if (!flag("--no-open"))
                     openDefault(url);

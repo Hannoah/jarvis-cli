@@ -30,6 +30,25 @@ const tokenOf = (cfg: Config) => {
   try { return fs.readFileSync(path.join(cfg.dataDir, ".dashboard_token"), "utf8").trim(); } catch { return ""; }
 };
 
+/**
+ * 401 from the dashboard port means a Jarvis dashboard is answering but was started with another settings folder
+ * (typically jarvis-ts, or an earlier start whose token file is stale), so our token is not the one it expects.
+ */
+export const foreignMessage = (cfg: Config) =>
+  `A Jarvis dashboard is already answering on port ${dashPort(cfg)} but rejected this settings folder's token.\n` +
+  `  It was started with a different data folder (probably jarvis-ts). Stop it first, or use its folder:\n` +
+  `    PowerShell:  $env:JARVIS_HOME = "<its data folder, e.g. ...\\jarvis-ts\\data>"\n` +
+  `  This command is using: ${cfg.dataDir}`;
+
+/** "none": nothing on the dashboard port · "ok": it is ours · "foreign": it answers but rejects our token. */
+export async function dashboardAccess(cfg: Config): Promise<"none" | "ok" | "foreign"> {
+  try {
+    return (await control<State>(cfg, "GET", "/api/state")) ? "ok" : "none";
+  } catch (e) {
+    return (e as { foreign?: boolean }).foreign ? "foreign" : "none";
+  }
+}
+
 interface State {
   server: { state: string; pid: number | null; started_at: number | null };
   tunnel: { state: string; url: string; id: string };
@@ -54,7 +73,8 @@ function control<T>(cfg: Config, method: "GET" | "POST", p: string): Promise<T |
         res.on("end", () => {
           let body: { error?: string } = {};
           try { body = JSON.parse(raw) as { error?: string }; } catch { /* non-JSON error page */ }
-          if ((res.statusCode ?? 500) >= 400) reject(Object.assign(new Error(body.error ?? `HTTP ${res.statusCode}`), { status: res.statusCode }));
+          if (res.statusCode === 401) reject(Object.assign(new Error(foreignMessage(cfg)), { status: 401, foreign: true }));
+          else if ((res.statusCode ?? 500) >= 400) reject(Object.assign(new Error(body.error ?? `HTTP ${res.statusCode}`), { status: res.statusCode }));
           else resolve(body as T);
         });
       },
@@ -88,6 +108,7 @@ export async function status(cfg: Config): Promise<number> {
 /** Start the supervisor (server + tunnel + dashboard) detached, so the terminal stays free. */
 export async function startBackground(cfg: Config, entry: string, flags: string[]): Promise<number> {
   if (await control<State>(cfg, "GET", "/api/state")) return console.log(c.dim("Already running.")), await status(cfg);
+  if (await portOpen(dashPort(cfg))) return fail(`Port ${dashPort(cfg)} is in use by another program. Change JARVIS_DASHBOARD_PORT in ${cfg.envFile}.`);
   const child = spawn(process.execPath, [...process.execArgv, entry, "start", "--no-open", ...flags], {
     detached: true,
     stdio: "ignore",
