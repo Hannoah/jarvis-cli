@@ -19,9 +19,9 @@ Jarvis(jarvis-ts)의 도구 39개를 **터미널 명령**과 **로컬 MCP 서버
 4. [testing-and-pitfalls](testing-and-pitfalls.md) — 검증 방법(실제 터미널 포함)과 겪은 함정
 5. [release-runbook](release-runbook.md) — 배포 절차 (커밋 → push → 릴리스 → 설치 검증)
 
-## 현재 상태 (2026-11-07)
-- 최신 릴리스 **v0.11.0**(Dev Tunnel 3분 쿨다운 자가 치유(Auto-Healing), 웹 대시보드 에이전트 모니터링 탭 추가, 모바일 원격 다운로드 도구 `share_file_url` 추가, 대시보드 한글 깨짐 58곳 완전 해소).
-- 테스트 44개 통과(`npm test`). 도구 40개.
+## 현재 상태 (2026-11-09)
+- 최신 릴리스 **v0.12.1**(팔로알토 GlobalProtect VPN 상태 진단 `check_vpn_status` 및 사내 Viya AKS 세션 끊김 방지 `vpn_keepalive` 추가, DNS 지연 워치독·URL 정규화·YAML 따옴표 방어 등 전수 안정화).
+- 테스트 50개 100% 통과(`npm test`). 도구 42개.
 - 사용자의 PC에서는 **jarvis-ts가 같은 포트(8765/8766)로 이미 실행 중**이다. 서버 관련 시험은 반드시 임시 설정 폴더와 임시 포트로 한다 → [testing-and-pitfalls](testing-and-pitfalls.md).
 - 설치는 **tarball URL**로만 안내한다(`npm install -g github:...`는 npm 11에서 깨짐).
 

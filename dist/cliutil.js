@@ -242,6 +242,7 @@ const CATEGORIES = {
     Desktop: ["open_in_default_app", "manage_clipboard", "send_notification"],
     Scheduler: ["schedule_task", "list_scheduled_tasks", "delete_scheduled_task"],
     "Cloud CLIs": ["run_kubectl", "run_azure_cli", "run_pac_cli", "run_viya_cli", "deploy_viya_status_page"],
+    "VPN & Network": ["check_vpn_status", "vpn_keepalive"],
 };
 export function categorize(tools) {
     const seen = new Set();

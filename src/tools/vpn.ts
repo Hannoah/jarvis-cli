@@ -47,13 +47,28 @@ let keepAliveState: KeepAliveState = {
   last_ping_success: null,
 };
 
+/** Normalize target host/URL string into clean hostname and optional port. */
+export function parseTargetEndpoint(input: string, fallbackPort = 443): { host: string; port: number } {
+  let cleaned = input.trim().replace(/^https?:\/\//i, "");
+  // Strip any trailing paths or queries
+  cleaned = cleaned.split("/")[0]!.split("?")[0]!;
+  const m = /^([^:]+)(?::(\d+))?$/.exec(cleaned);
+  if (m) {
+    return {
+      host: m[1]!,
+      port: m[2] ? Number(m[2]) : fallbackPort,
+    };
+  }
+  return { host: cleaned, port: fallbackPort };
+}
+
 /** Parse the default kubeconfig to discover the corporate AKS/Kubernetes endpoint. */
 export function getDefaultKubeServer(home = os.homedir()): { host: string; port: number } | null {
   try {
     const kfile = path.join(home, ".kube", "config");
     if (!fs.existsSync(kfile)) return null;
     const content = fs.readFileSync(kfile, "utf8");
-    const m = /server:\s*https?:\/\/([^:\s/]+)(?::(\d+))?/i.exec(content);
+    const m = /server:\s*["']?https?:\/\/([^:\s/"']+)(?::(\d+))?/i.exec(content);
     if (!m) return null;
     return { host: m[1]!, port: m[2] ? Number(m[2]) : 443 };
   } catch {
@@ -61,16 +76,23 @@ export function getDefaultKubeServer(home = os.homedir()): { host: string; port:
   }
 }
 
-/** Test TCP connectivity with a strict timeout. */
+/** Test TCP connectivity with a strict timeout (including DNS lookup watchdog). */
 export function testTcpConnectivity(host: string, port: number, timeoutMs = 3000): Promise<boolean> {
   return new Promise((resolve) => {
     let resolved = false;
+    let timer: NodeJS.Timeout | undefined;
+
     const finish = (ok: boolean) => {
       if (resolved) return;
       resolved = true;
+      if (timer) clearTimeout(timer);
       socket.destroy();
       resolve(ok);
     };
+
+    // Overall watchdog timer: guarantees resolution even if DNS lookup hangs
+    timer = setTimeout(() => finish(false), timeoutMs);
+
     const socket = net.connect({ host, port });
     socket.setTimeout(timeoutMs, () => finish(false));
     socket.once("connect", () => finish(true));
@@ -78,12 +100,15 @@ export function testTcpConnectivity(host: string, port: number, timeoutMs = 3000
   });
 }
 
-/** Check GlobalProtect Virtual Adapter status using PowerShell. */
+/** Check GlobalProtect Virtual Adapter status using PowerShell (Windows-safe). */
 export function queryGlobalProtectAdapter(): Promise<{ status: string; name: string | null; ips: string[] }> {
+  if (process.platform !== "win32") {
+    return Promise.resolve({ status: "Unsupported on non-Windows", name: null, ips: [] });
+  }
   return new Promise((resolve) => {
     const ps = psExecutable();
     const script = `
-$adapter = Get-NetAdapter | Where-Object { $_.InterfaceDescription -like '*Palo Alto*' -or $_.InterfaceDescription -like '*PANGP*' } | Select-Object -First 1
+$adapter = Get-NetAdapter | Where-Object { $_.InterfaceDescription -like '*Palo Alto*' -or $_.InterfaceDescription -like '*PANGP*' -or $_.Name -like '*GlobalProtect*' -or $_.Name -like '*PANGP*' } | Select-Object -First 1
 if (!$adapter) {
     Write-Output "NOT_FOUND"
 } else {
@@ -107,6 +132,7 @@ if (!$adapter) {
 
 /** Query PanGPS Windows service status. */
 export function queryPanGpsService(): Promise<string> {
+  if (process.platform !== "win32") return Promise.resolve("Unsupported on non-Windows");
   return new Promise((resolve) => {
     const ps = psExecutable();
     execFile(ps, ["-NoProfile", "-NonInteractive", "-Command", "(Get-Service PanGPS -ErrorAction SilentlyContinue).Status"], { timeout: 5000, windowsHide: true }, (err, stdout) => {
@@ -131,8 +157,17 @@ export function registerVpnTools(mcp: McpServer, ctx: Ctx): void {
     },
     async ({ target_host, target_port }) => {
       const kubeServer = getDefaultKubeServer(ctx.cfg.home);
-      const host = target_host?.trim() || kubeServer?.host || "viyallm-aks-5ga9k4sq.hcp.koreacentral.azmk8s.io";
-      const port = target_port || kubeServer?.port || 443;
+      const defaultHost = kubeServer?.host || "viyallm-aks-5ga9k4sq.hcp.koreacentral.azmk8s.io";
+      const defaultPort = kubeServer?.port || 443;
+
+      let host = defaultHost;
+      let port = target_port || defaultPort;
+
+      if (target_host && target_host.trim()) {
+        const parsed = parseTargetEndpoint(target_host, port);
+        host = parsed.host;
+        port = target_port !== undefined && target_port !== 443 ? target_port : parsed.port;
+      }
 
       const [adapter, svcStatus, k8sReachable] = await Promise.all([
         queryGlobalProtectAdapter(),
@@ -181,8 +216,18 @@ export function registerVpnTools(mcp: McpServer, ctx: Ctx): void {
     },
     async ({ action, interval_sec, target_host, target_port }) => {
       const kubeServer = getDefaultKubeServer(ctx.cfg.home);
-      const host = target_host?.trim() || kubeServer?.host || "viyallm-aks-5ga9k4sq.hcp.koreacentral.azmk8s.io";
-      const port = target_port || kubeServer?.port || 443;
+      const defaultHost = kubeServer?.host || "viyallm-aks-5ga9k4sq.hcp.koreacentral.azmk8s.io";
+      const defaultPort = kubeServer?.port || 443;
+
+      let host = defaultHost;
+      let port = target_port || defaultPort;
+
+      if (target_host && target_host.trim()) {
+        const parsed = parseTargetEndpoint(target_host, port);
+        host = parsed.host;
+        port = target_port !== undefined && target_port !== 443 ? target_port : parsed.port;
+      }
+
       const targetStr = `${host}:${port}`;
 
       if (action === "stop") {
@@ -209,11 +254,17 @@ export function registerVpnTools(mcp: McpServer, ctx: Ctx): void {
         };
 
         const doProbe = async () => {
-          const ok = await testTcpConnectivity(host, port, 3000);
-          keepAliveState.total_pings++;
-          if (ok) keepAliveState.successful_pings++;
-          keepAliveState.last_ping_time = new Date().toISOString();
-          keepAliveState.last_ping_success = ok;
+          try {
+            const ok = await testTcpConnectivity(host, port, 3000);
+            keepAliveState.total_pings++;
+            if (ok) keepAliveState.successful_pings++;
+            keepAliveState.last_ping_time = new Date().toISOString();
+            keepAliveState.last_ping_success = ok;
+          } catch {
+            keepAliveState.total_pings++;
+            keepAliveState.last_ping_time = new Date().toISOString();
+            keepAliveState.last_ping_success = false;
+          }
         };
 
         // Initial immediate probe
@@ -238,4 +289,21 @@ export function registerVpnTools(mcp: McpServer, ctx: Ctx): void {
       });
     },
   );
+}
+
+/** Test helper to ensure isolated keep-alive state across runs. */
+export function resetKeepAliveForTest(): void {
+  if (keepAliveTimer) {
+    clearInterval(keepAliveTimer);
+    keepAliveTimer = null;
+  }
+  keepAliveState = {
+    active: false,
+    target: "",
+    interval_sec: 180,
+    total_pings: 0,
+    successful_pings: 0,
+    last_ping_time: null,
+    last_ping_success: null,
+  };
 }
