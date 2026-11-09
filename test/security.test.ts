@@ -102,6 +102,24 @@ test("oauth: consent needs the API key, PKCE is enforced, and the issued token w
     assert.equal((await req(s.port, "GET", "/mcp", { authorization: "Bearer mcp_at_forged" })).status, 401);
     const again = await req(s.port, "POST", "/oauth/token", post, form({ grant_type: "authorization_code", code, code_verifier: verifier }));
     assert.equal(again.status, 400); // codes are single use
+
+    // Non-PKCE flow: client authentication is mandatory
+    const noPkceAuthz = { redirect_uri: "https://client.example/cb", state: "s2" };
+    const noPkceRes = await req(s.port, "POST", "/oauth/authorize", post, form({ ...noPkceAuthz, api_key: s.key }));
+    assert.equal(noPkceRes.status, 302);
+    const noPkceCode = new URL(noPkceRes.headers.location!).searchParams.get("code")!;
+
+    // Fails without client_secret
+    const noSecretRes = await req(s.port, "POST", "/oauth/token", post, form({ grant_type: "authorization_code", code: noPkceCode }));
+    assert.equal(noSecretRes.status, 401);
+
+    // Fails with invalid client_secret
+    const badSecretRes = await req(s.port, "POST", "/oauth/token", post, form({ grant_type: "authorization_code", code: noPkceCode, client_secret: "wrong_secret" }));
+    assert.equal(badSecretRes.status, 401);
+
+    // Succeeds with valid client_secret
+    const goodSecretRes = await req(s.port, "POST", "/oauth/token", post, form({ grant_type: "authorization_code", code: noPkceCode, client_secret: s.key }));
+    assert.equal(goodSecretRes.status, 200);
   } finally {
     await s.close();
   }

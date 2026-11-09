@@ -20,7 +20,7 @@ Jarvis(jarvis-ts)의 도구 39개를 **터미널 명령**과 **로컬 MCP 서버
 5. [release-runbook](release-runbook.md) — 배포 절차 (커밋 → push → 릴리스 → 설치 검증)
 
 ## 현재 상태 (2026-11-09)
-- 최신 릴리스 **v0.12.1**(팔로알토 GlobalProtect VPN 상태 진단 `check_vpn_status` 및 사내 Viya AKS 세션 끊김 방지 `vpn_keepalive` 추가, DNS 지연 워치독·URL 정규화·YAML 따옴표 방어 등 전수 안정화).
+- 최신 릴리스 **v0.12.2**(사내 AKS 도메인 하드코딩 제거, OAuth PKCE 필수화, Task Scheduler 비동기화, Office 문서 추출 조기 종료, CJK 전각 문자 터미널 줄맞춤 보정).
 - 테스트 50개 100% 통과(`npm test`). 도구 42개.
 - 사용자의 PC에서는 **jarvis-ts가 같은 포트(8765/8766)로 이미 실행 중**이다. 서버 관련 시험은 반드시 임시 설정 폴더와 임시 포트로 한다 → [testing-and-pitfalls](testing-and-pitfalls.md).
 - 설치는 **tarball URL**로만 안내한다(`npm install -g github:...`는 npm 11에서 깨짐).

@@ -5,7 +5,7 @@
  * The old version embedded the command inside the /TR string, where an embedded quote could change how it was parsed
  * after the policy had approved it.
  */
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import type { Ctx } from "../core/context.js";
@@ -25,6 +25,18 @@ const run = (cmd: string, args: string[], input?: string, timeout = 15000) => {
   const r = spawnSync(cmd, args, { timeout, windowsHide: true, input });
   return { ok: r.status === 0, out: decodeText(r.stdout ?? Buffer.alloc(0)).text.trim(), err: decodeText(r.stderr ?? Buffer.alloc(0)).text.trim(), error: r.error };
 };
+
+const runAsync = (cmd: string, args: string[], timeout = 60000): Promise<{ ok: boolean; out: string; err: string; error?: Error }> =>
+  new Promise((resolve) => {
+    execFile(cmd, args, { timeout, windowsHide: true, encoding: "buffer", maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+      resolve({
+        ok: !err,
+        out: decodeText(stdout ?? Buffer.alloc(0)).text.trim(),
+        err: decodeText(stderr ?? Buffer.alloc(0)).text.trim(),
+        error: err ?? undefined,
+      });
+    });
+  });
 
 const scriptsDir = (ctx: Ctx) => path.join(ctx.cfg.dataDir, ".scheduled");
 const shQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -101,10 +113,10 @@ function parseCsvLine(line: string): string[] {
   return out;
 }
 
-export function listTasks(): { ok: true; tasks: { task_name: string; next_run_time: string; status: string }[] } | { ok: false; error: string } {
+export async function listTasks(): Promise<{ ok: true; tasks: { task_name: string; next_run_time: string; status: string }[] } | { ok: false; error: string }> {
   if (isWin) {
     // /Query enumerates every task on the machine (hundreds on a managed PC) and can exceed 15 s under load
-    const r = run("schtasks", ["/Query", "/FO", "CSV", "/NH"], undefined, 90000);
+    const r = await runAsync("schtasks", ["/Query", "/FO", "CSV", "/NH"], 90000);
     if (r.error) return { ok: false, error: String(r.error) };
     const tasks = r.out
       .split(/\r?\n/)
@@ -113,7 +125,7 @@ export function listTasks(): { ok: true; tasks: { task_name: string; next_run_ti
       .map((row) => ({ task_name: row[0]!.replace(/^\\+/, ""), next_run_time: row[1]!, status: row[2]! }));
     return { ok: true, tasks };
   }
-  const r = run("crontab", ["-l"]);
+  const r = await runAsync("crontab", ["-l"], 15000);
   const tasks = (r.ok ? r.out.split("\n") : [])
     .map((l) => /# (Jarvis_\S+)$/.exec(l)?.[1])
     .filter((n): n is string => !!n)

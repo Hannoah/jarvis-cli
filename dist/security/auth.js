@@ -359,8 +359,11 @@ export function createAuth(cfg, audit, apiKey, clientId = DEFAULT_CLIENT_ID) {
                 if (!safeEqual(computed, info.codeChallenge))
                     return fail(400, "invalid_grant", "PKCE verification failed");
             }
-            else if (clientSecret !== undefined && !secretOk(clientSecret)) {
-                return fail(401, "invalid_client", "Invalid client_secret");
+            else {
+                // Confidential client: when no PKCE challenge was registered at authorization, a valid client_secret is mandatory.
+                if (clientSecret === undefined || !secretOk(clientSecret)) {
+                    return fail(401, "invalid_client", "Client authentication required: missing or invalid client_secret");
+                }
             }
             codes.delete(code); // single use, only after validation succeeded
         }

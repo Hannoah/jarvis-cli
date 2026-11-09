@@ -157,7 +157,7 @@ export function registerVpnTools(mcp: McpServer, ctx: Ctx): void {
     },
     async ({ target_host, target_port }) => {
       const kubeServer = getDefaultKubeServer(ctx.cfg.home);
-      const defaultHost = kubeServer?.host || "viyallm-aks-5ga9k4sq.hcp.koreacentral.azmk8s.io";
+      const defaultHost = kubeServer?.host || process.env.JARVIS_VPN_TARGET_HOST || "";
       const defaultPort = kubeServer?.port || 443;
 
       let host = defaultHost;
@@ -167,6 +167,19 @@ export function registerVpnTools(mcp: McpServer, ctx: Ctx): void {
         const parsed = parseTargetEndpoint(target_host, port);
         host = parsed.host;
         port = target_port !== undefined && target_port !== 443 ? target_port : parsed.port;
+      }
+
+      if (!host) {
+        return json({
+          connected: false,
+          adapter_name: null,
+          adapter_status: "Target Host Required",
+          ip_addresses: [],
+          service_status: "Unknown",
+          k8s_target: "",
+          k8s_reachable: false,
+          message: "No target host specified and corporate cluster endpoint was not found in ~/.kube/config. Please provide target_host or set JARVIS_VPN_TARGET_HOST.",
+        });
       }
 
       const [adapter, svcStatus, k8sReachable] = await Promise.all([
@@ -216,7 +229,7 @@ export function registerVpnTools(mcp: McpServer, ctx: Ctx): void {
     },
     async ({ action, interval_sec, target_host, target_port }) => {
       const kubeServer = getDefaultKubeServer(ctx.cfg.home);
-      const defaultHost = kubeServer?.host || "viyallm-aks-5ga9k4sq.hcp.koreacentral.azmk8s.io";
+      const defaultHost = kubeServer?.host || process.env.JARVIS_VPN_TARGET_HOST || "";
       const defaultPort = kubeServer?.port || 443;
 
       let host = defaultHost;
@@ -228,8 +241,6 @@ export function registerVpnTools(mcp: McpServer, ctx: Ctx): void {
         port = target_port !== undefined && target_port !== 443 ? target_port : parsed.port;
       }
 
-      const targetStr = `${host}:${port}`;
-
       if (action === "stop") {
         if (keepAliveTimer) {
           clearInterval(keepAliveTimer);
@@ -239,6 +250,24 @@ export function registerVpnTools(mcp: McpServer, ctx: Ctx): void {
         ctx.audit("vpn_keepalive", "ALLOW", "stopped");
         return json({ success: true, message: "VPN keep-alive stopped.", state: keepAliveState });
       }
+
+      if (action === "status") {
+        return json({
+          success: true,
+          state: keepAliveState,
+        });
+      }
+
+      // action === "start" requires a valid target host
+      if (!host) {
+        return json({
+          success: false,
+          message: "No target host specified and corporate cluster endpoint was not found in ~/.kube/config. Please provide target_host or set JARVIS_VPN_TARGET_HOST.",
+          state: keepAliveState,
+        });
+      }
+
+      const targetStr = `${host}:${port}`;
 
       if (action === "start") {
         if (keepAliveTimer) clearInterval(keepAliveTimer);

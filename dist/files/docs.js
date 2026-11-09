@@ -64,15 +64,20 @@ export class Zip {
     }
 }
 const texts = (xml, tag) => [...xml.matchAll(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, "g"))].map((m) => decodeEntities(m[1]));
-export function readDocx(z) {
+export function readDocx(z, maxChars = Infinity) {
     if (!z.has("word/document.xml"))
         return "Error: Invalid .docx file (missing word/document.xml).";
     const xml = z.read("word/document.xml");
     const paras = [];
+    let totalChars = 0;
     for (const p of xml.matchAll(/<w:p[\s>][\s\S]*?<\/w:p>/g)) {
         const t = texts(p[0], "w:t").join("");
-        if (t)
+        if (t) {
             paras.push(t);
+            totalChars += t.length + 1;
+            if (totalChars >= maxChars)
+                break;
+        }
     }
     return paras.join("\n");
 }
@@ -85,15 +90,18 @@ const colIndex = (ref) => {
     }
     return n - 1;
 };
-export function readXlsx(z) {
+export function readXlsx(z, maxChars = Infinity) {
     const shared = [];
     if (z.has("xl/sharedStrings.xml")) {
         for (const si of z.read("xl/sharedStrings.xml").matchAll(/<si[\s>][\s\S]*?<\/si>|<si\/>/g))
             shared.push(texts(si[0], "t").join(""));
     }
     const sheets = z.names().filter((f) => /^xl\/worksheets\/sheet[^/]*\.xml$/.test(f)).sort();
-    return sheets
-        .map((sf) => {
+    const out = [];
+    let totalChars = 0;
+    for (const sf of sheets) {
+        if (totalChars >= maxChars)
+            break;
         const rows = [];
         for (const row of z.read(sf).matchAll(/<row[\s>][\s\S]*?<\/row>/g)) {
             const vals = [];
@@ -118,21 +126,35 @@ export function readXlsx(z) {
                 if (at < MAX_COLS)
                     vals[at] = val;
             }
-            if (vals.some((x) => x.trim()))
-                rows.push(vals.join(" | "));
+            if (vals.some((x) => x.trim())) {
+                const line = vals.join(" | ");
+                rows.push(line);
+                totalChars += line.length + 1;
+                if (totalChars >= maxChars)
+                    break;
+            }
         }
-        return `### Sheet: ${sf.split("/").pop().replace(/\.xml$/, "")}\n${rows.join("\n")}`;
-    })
-        .join("\n\n");
+        const sheetText = `### Sheet: ${sf.split("/").pop().replace(/\.xml$/, "")}\n${rows.join("\n")}`;
+        out.push(sheetText);
+        totalChars += sheetText.length + 2;
+    }
+    return out.join("\n\n");
 }
-export function readPptx(z) {
+export function readPptx(z, maxChars = Infinity) {
     const slides = z.names().filter((f) => /^ppt\/slides\/slide[^/]*\.xml$/.test(f)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     const out = [];
-    slides.forEach((sf, i) => {
+    let totalChars = 0;
+    for (let i = 0; i < slides.length; i++) {
+        const sf = slides[i];
         const t = texts(z.read(sf), "a:t").map((s) => s.trim()).filter(Boolean);
-        if (t.length)
-            out.push(`### Slide ${i + 1}\n${t.join("\n")}`);
-    });
+        if (t.length) {
+            const slideText = `### Slide ${i + 1}\n${t.join("\n")}`;
+            out.push(slideText);
+            totalChars += slideText.length + 2;
+            if (totalChars >= maxChars)
+                break;
+        }
+    }
     return out.join("\n\n");
 }
 export async function readPdf(file) {
@@ -141,13 +163,13 @@ export async function readPdf(file) {
     const { text } = await extractText(pdf, { mergePages: false });
     return text.map((t, i) => `--- Page ${i + 1} ---\n${t}`).join("\n\n");
 }
-export async function readDocumentText(file, ext) {
+export async function readDocumentText(file, ext, maxChars = Infinity) {
     if (ext === ".docx")
-        return readDocx(new Zip(fs.readFileSync(file)));
+        return readDocx(new Zip(fs.readFileSync(file)), maxChars);
     if (ext === ".xlsx" || ext === ".xlsm")
-        return readXlsx(new Zip(fs.readFileSync(file)));
+        return readXlsx(new Zip(fs.readFileSync(file)), maxChars);
     if (ext === ".pptx")
-        return readPptx(new Zip(fs.readFileSync(file)));
+        return readPptx(new Zip(fs.readFileSync(file)), maxChars);
     if (ext === ".pdf")
         return readPdf(file);
     return fs.readFileSync(file).toString("utf8");

@@ -63,7 +63,34 @@ export function humanBytes(n: unknown): string {
   return `${v.toFixed(v < 10 ? 1 : 0)} ${u[i]}`;
 }
 export const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
-export const visibleLength = (s: string) => stripAnsi(s).length;
+
+/** Display width in terminal columns, counting East Asian fullwidth / CJK characters as 2 columns. */
+export function stringWidth(s: string): number {
+  const clean = stripAnsi(s);
+  let w = 0;
+  for (let i = 0; i < clean.length; i++) {
+    const cp = clean.codePointAt(i)!;
+    if (cp > 0xffff) i++;
+    if (
+      (cp >= 0x1100 && cp <= 0x115f) || // Hangul Jamo
+      (cp >= 0x2e80 && cp <= 0x9fff) || // CJK Radicals, Ideographs, etc.
+      (cp >= 0xac00 && cp <= 0xd7a3) || // Hangul Syllables
+      (cp >= 0xf900 && cp <= 0xfaff) || // CJK Compatibility Ideographs
+      (cp >= 0xfe10 && cp <= 0xfe19) || // Vertical forms
+      (cp >= 0xfe30 && cp <= 0xfe6f) || // CJK Compatibility Forms
+      (cp >= 0xff01 && cp <= 0xff60) || // Fullwidth Forms
+      (cp >= 0xffe0 && cp <= 0xffe6) ||
+      (cp >= 0x20000 && cp <= 0x3fffd)
+    ) {
+      w += 2;
+    } else {
+      w += 1;
+    }
+  }
+  return w;
+}
+
+export const visibleLength = (s: string) => stringWidth(s);
 
 export type Prop = { type?: string | string[]; description?: string; enum?: unknown[] };
 export type Schema = { properties?: Record<string, Prop>; required?: string[] };
@@ -140,12 +167,16 @@ const cell = (v: unknown) => (v == null ? "-" : typeof v === "object" ? JSON.str
 const isRows = (v: unknown): v is Row[] =>
   Array.isArray(v) && v.length > 0 && v.every((r) => r && typeof r === "object" && !Array.isArray(r) && Object.values(r).every(scalar));
 
-// ponytail: pads by string length, so double-width (CJK) cells misalign slightly; use a width lib if that matters
+/** Render rows as an aligned table; respects CJK double-width characters so columns align cleanly. */
 export function table(rows: Row[], maxCell = 60, style?: (col: string, text: string, row: Row) => string): string {
   const cols = [...new Set(rows.flatMap((r) => Object.keys(r)))];
   const body = rows.map((r) => cols.map((k) => truncate(cell(r[k]), maxCell)));
-  const w = cols.map((k, i) => Math.max(k.length, ...body.map((r) => r[i]!.length)));
-  const padCell = (s: string, i: number) => (i === cols.length - 1 ? s : s.padEnd(w[i]!)); // the last column is never padded
+  const w = cols.map((k, i) => Math.max(stringWidth(k), ...body.map((r) => stringWidth(r[i]!))));
+  const padCell = (s: string, i: number) => {
+    if (i === cols.length - 1) return s; // the last column is never padded
+    const diff = w[i]! - stringWidth(s);
+    return diff > 0 ? s + " ".repeat(diff) : s;
+  };
   const head = cols.map((k, i) => c.bold(padCell(k, i))).join("  ");
   const lines = body.map((r, ri) => r.map((s, i) => (style ? style(cols[i]!, padCell(s, i), rows[ri]!) : padCell(s, i))).join("  "));
   return [head, ...lines].join("\n");

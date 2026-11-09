@@ -325,7 +325,7 @@ export function registerDevTools(mcp, ctx) {
             return json({ success: false, error: "Document too large (limit 50 MB)." });
         const ext = path.extname(r.path).toLowerCase();
         try {
-            let content = await readDocumentText(r.path, ext);
+            let content = await readDocumentText(r.path, ext, max_chars);
             const truncated = content.length > max_chars;
             if (truncated)
                 content = `${content.slice(0, max_chars)}\n\n... [Truncated at ${max_chars} chars]`;
@@ -379,7 +379,7 @@ export function registerDevTools(mcp, ctx) {
         return json({ success: true, task_name: name, schedule_type: sched, start_time: time, workdir: r.path, command, message: res.message });
     });
     mcp.registerTool("list_scheduled_tasks", { description: "List all automated tasks managed by Jarvis (`Jarvis_*`) in the OS scheduler.", annotations: READ_ONLY }, async () => {
-        const t = listTasks();
+        const t = await listTasks();
         return json(t.ok ? { success: true, count: t.tasks.length, tasks: t.tasks } : { success: false, error: `Failed to query scheduled tasks: ${t.error}` });
     });
     mcp.registerTool("delete_scheduled_task", {

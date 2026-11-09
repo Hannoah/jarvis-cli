@@ -58,13 +58,18 @@ export class Zip {
 const texts = (xml: string, tag: string): string[] =>
   [...xml.matchAll(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, "g"))].map((m) => decodeEntities(m[1]!));
 
-export function readDocx(z: Zip): string {
+export function readDocx(z: Zip, maxChars = Infinity): string {
   if (!z.has("word/document.xml")) return "Error: Invalid .docx file (missing word/document.xml).";
   const xml = z.read("word/document.xml");
   const paras: string[] = [];
+  let totalChars = 0;
   for (const p of xml.matchAll(/<w:p[\s>][\s\S]*?<\/w:p>/g)) {
     const t = texts(p[0], "w:t").join("");
-    if (t) paras.push(t);
+    if (t) {
+      paras.push(t);
+      totalChars += t.length + 1;
+      if (totalChars >= maxChars) break;
+    }
   }
   return paras.join("\n");
 }
@@ -78,48 +83,64 @@ const colIndex = (ref: string): number => {
   return n - 1;
 };
 
-export function readXlsx(z: Zip): string {
+export function readXlsx(z: Zip, maxChars = Infinity): string {
   const shared: string[] = [];
   if (z.has("xl/sharedStrings.xml")) {
     for (const si of z.read("xl/sharedStrings.xml").matchAll(/<si[\s>][\s\S]*?<\/si>|<si\/>/g)) shared.push(texts(si[0], "t").join(""));
   }
   const sheets = z.names().filter((f) => /^xl\/worksheets\/sheet[^/]*\.xml$/.test(f)).sort();
-  return sheets
-    .map((sf) => {
-      const rows: string[] = [];
-      for (const row of z.read(sf).matchAll(/<row[\s>][\s\S]*?<\/row>/g)) {
-        const vals: string[] = [];
-        for (const c of row[0].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-          const attrs = c[1]!;
-          const body = c[2] ?? "";
-          const type = /\bt="([^"]*)"/.exec(attrs)?.[1] ?? "";
-          const ref = /\br="([^"]*)"/.exec(attrs)?.[1];
-          const v = /<v>([\s\S]*?)<\/v>/.exec(body)?.[1];
-          let val = "";
-          if (v !== undefined) {
-            const idx = Number(v);
-            val = type === "s" ? (shared[idx] ?? decodeEntities(v)) : decodeEntities(v);
-          } else if (/<t[\s>]/.test(body)) val = texts(body, "t").join("");
-          // place by column so empty cells keep later columns aligned
-          const cIdx = ref ? colIndex(ref) : vals.length;
-          const at = cIdx >= 0 && cIdx < MAX_COLS ? cIdx : vals.length;
-          while (vals.length < at && vals.length < MAX_COLS) vals.push("");
-          if (at < MAX_COLS) vals[at] = val;
-        }
-        if (vals.some((x) => x.trim())) rows.push(vals.join(" | "));
+  const out: string[] = [];
+  let totalChars = 0;
+  for (const sf of sheets) {
+    if (totalChars >= maxChars) break;
+    const rows: string[] = [];
+    for (const row of z.read(sf).matchAll(/<row[\s>][\s\S]*?<\/row>/g)) {
+      const vals: string[] = [];
+      for (const c of row[0].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+        const attrs = c[1]!;
+        const body = c[2] ?? "";
+        const type = /\bt="([^"]*)"/.exec(attrs)?.[1] ?? "";
+        const ref = /\br="([^"]*)"/.exec(attrs)?.[1];
+        const v = /<v>([\s\S]*?)<\/v>/.exec(body)?.[1];
+        let val = "";
+        if (v !== undefined) {
+          const idx = Number(v);
+          val = type === "s" ? (shared[idx] ?? decodeEntities(v)) : decodeEntities(v);
+        } else if (/<t[\s>]/.test(body)) val = texts(body, "t").join("");
+        // place by column so empty cells keep later columns aligned
+        const cIdx = ref ? colIndex(ref) : vals.length;
+        const at = cIdx >= 0 && cIdx < MAX_COLS ? cIdx : vals.length;
+        while (vals.length < at && vals.length < MAX_COLS) vals.push("");
+        if (at < MAX_COLS) vals[at] = val;
       }
-      return `### Sheet: ${sf.split("/").pop()!.replace(/\.xml$/, "")}\n${rows.join("\n")}`;
-    })
-    .join("\n\n");
+      if (vals.some((x) => x.trim())) {
+        const line = vals.join(" | ");
+        rows.push(line);
+        totalChars += line.length + 1;
+        if (totalChars >= maxChars) break;
+      }
+    }
+    const sheetText = `### Sheet: ${sf.split("/").pop()!.replace(/\.xml$/, "")}\n${rows.join("\n")}`;
+    out.push(sheetText);
+    totalChars += sheetText.length + 2;
+  }
+  return out.join("\n\n");
 }
 
-export function readPptx(z: Zip): string {
+export function readPptx(z: Zip, maxChars = Infinity): string {
   const slides = z.names().filter((f) => /^ppt\/slides\/slide[^/]*\.xml$/.test(f)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   const out: string[] = [];
-  slides.forEach((sf, i) => {
+  let totalChars = 0;
+  for (let i = 0; i < slides.length; i++) {
+    const sf = slides[i]!;
     const t = texts(z.read(sf), "a:t").map((s) => s.trim()).filter(Boolean);
-    if (t.length) out.push(`### Slide ${i + 1}\n${t.join("\n")}`);
-  });
+    if (t.length) {
+      const slideText = `### Slide ${i + 1}\n${t.join("\n")}`;
+      out.push(slideText);
+      totalChars += slideText.length + 2;
+      if (totalChars >= maxChars) break;
+    }
+  }
   return out.join("\n\n");
 }
 
@@ -130,10 +151,10 @@ export async function readPdf(file: string): Promise<string> {
   return text.map((t: string, i: number) => `--- Page ${i + 1} ---\n${t}`).join("\n\n");
 }
 
-export async function readDocumentText(file: string, ext: string): Promise<string> {
-  if (ext === ".docx") return readDocx(new Zip(fs.readFileSync(file)));
-  if (ext === ".xlsx" || ext === ".xlsm") return readXlsx(new Zip(fs.readFileSync(file)));
-  if (ext === ".pptx") return readPptx(new Zip(fs.readFileSync(file)));
+export async function readDocumentText(file: string, ext: string, maxChars = Infinity): Promise<string> {
+  if (ext === ".docx") return readDocx(new Zip(fs.readFileSync(file)), maxChars);
+  if (ext === ".xlsx" || ext === ".xlsm") return readXlsx(new Zip(fs.readFileSync(file)), maxChars);
+  if (ext === ".pptx") return readPptx(new Zip(fs.readFileSync(file)), maxChars);
   if (ext === ".pdf") return readPdf(file);
   return fs.readFileSync(file).toString("utf8");
 }

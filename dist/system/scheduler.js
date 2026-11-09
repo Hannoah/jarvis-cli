@@ -5,7 +5,7 @@
  * The old version embedded the command inside the /TR string, where an embedded quote could change how it was parsed
  * after the policy had approved it.
  */
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { psExecutable } from "../security/policy.js";
@@ -22,6 +22,16 @@ const run = (cmd, args, input, timeout = 15000) => {
     const r = spawnSync(cmd, args, { timeout, windowsHide: true, input });
     return { ok: r.status === 0, out: decodeText(r.stdout ?? Buffer.alloc(0)).text.trim(), err: decodeText(r.stderr ?? Buffer.alloc(0)).text.trim(), error: r.error };
 };
+const runAsync = (cmd, args, timeout = 60000) => new Promise((resolve) => {
+    execFile(cmd, args, { timeout, windowsHide: true, encoding: "buffer", maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+        resolve({
+            ok: !err,
+            out: decodeText(stdout ?? Buffer.alloc(0)).text.trim(),
+            err: decodeText(stderr ?? Buffer.alloc(0)).text.trim(),
+            error: err ?? undefined,
+        });
+    });
+});
 const scriptsDir = (ctx) => path.join(ctx.cfg.dataDir, ".scheduled");
 const shQuote = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
 export function createTask(ctx, t) {
@@ -91,10 +101,10 @@ function parseCsvLine(line) {
     out.push(cur);
     return out;
 }
-export function listTasks() {
+export async function listTasks() {
     if (isWin) {
         // /Query enumerates every task on the machine (hundreds on a managed PC) and can exceed 15 s under load
-        const r = run("schtasks", ["/Query", "/FO", "CSV", "/NH"], undefined, 90000);
+        const r = await runAsync("schtasks", ["/Query", "/FO", "CSV", "/NH"], 90000);
         if (r.error)
             return { ok: false, error: String(r.error) };
         const tasks = r.out
@@ -104,7 +114,7 @@ export function listTasks() {
             .map((row) => ({ task_name: row[0].replace(/^\\+/, ""), next_run_time: row[1], status: row[2] }));
         return { ok: true, tasks };
     }
-    const r = run("crontab", ["-l"]);
+    const r = await runAsync("crontab", ["-l"], 15000);
     const tasks = (r.ok ? r.out.split("\n") : [])
         .map((l) => /# (Jarvis_\S+)$/.exec(l)?.[1])
         .filter((n) => !!n)
