@@ -62,7 +62,7 @@ export class Service extends EventEmitter {
         this.generation++;
         const c = this.child;
         this.child = null;
-        if (c && c.exitCode === null) {
+        if (c && c.exitCode === null && c.signalCode === null) {
             const exited = new Promise((r) => c.once("exit", () => r()));
             killTree(c);
             await Promise.race([exited, sleep(5000)]);

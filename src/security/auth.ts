@@ -148,15 +148,35 @@ function parseForm(body: string): Record<string, string> {
   return out;
 }
 
-export async function readBody(req: IncomingMessage, max = MAX_BODY): Promise<string> {
+export async function readBody(req: IncomingMessage, max = MAX_BODY, timeoutMs = 30_000): Promise<string> {
   const chunks: Buffer[] = [];
   let size = 0;
-  for await (const c of req) {
-    size += (c as Buffer).length;
-    if (size > max) throw new Error("body too large");
-    chunks.push(c as Buffer);
-  }
-  return Buffer.concat(chunks).toString("utf8");
+  let timer: NodeJS.Timeout | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      req.destroy();
+      reject(new Error("request body timeout"));
+    }, timeoutMs);
+  });
+
+  const readPromise = (async () => {
+    try {
+      for await (const c of req) {
+        size += (c as Buffer).length;
+        if (size > max) {
+          req.destroy();
+          throw new Error("body too large");
+        }
+        chunks.push(c as Buffer);
+      }
+      return Buffer.concat(chunks).toString("utf8");
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  })();
+
+  return Promise.race([readPromise, timeoutPromise]);
 }
 
 type Headers = Record<string, string>;

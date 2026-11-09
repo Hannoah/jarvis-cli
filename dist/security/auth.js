@@ -142,16 +142,34 @@ function parseForm(body) {
             out[k] = v;
     return out;
 }
-export async function readBody(req, max = MAX_BODY) {
+export async function readBody(req, max = MAX_BODY, timeoutMs = 30_000) {
     const chunks = [];
     let size = 0;
-    for await (const c of req) {
-        size += c.length;
-        if (size > max)
-            throw new Error("body too large");
-        chunks.push(c);
-    }
-    return Buffer.concat(chunks).toString("utf8");
+    let timer;
+    const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+            req.destroy();
+            reject(new Error("request body timeout"));
+        }, timeoutMs);
+    });
+    const readPromise = (async () => {
+        try {
+            for await (const c of req) {
+                size += c.length;
+                if (size > max) {
+                    req.destroy();
+                    throw new Error("body too large");
+                }
+                chunks.push(c);
+            }
+            return Buffer.concat(chunks).toString("utf8");
+        }
+        finally {
+            if (timer)
+                clearTimeout(timer);
+        }
+    })();
+    return Promise.race([readPromise, timeoutPromise]);
 }
 function sendJson(res, status, data, extra = {}) {
     const body = JSON.stringify(data);

@@ -4,11 +4,13 @@ import zlib from "node:zlib";
 import { decodeEntities } from "../security/net.js";
 
 const MAX_ENTRY = 64 * 1024 * 1024; // zip-bomb guard per entry
+const MAX_COLS = 16384; // Excel maximum column limit (XFD) to prevent OOM on malicious or malformed sheets
 
 /** Minimal ZIP reader: central directory + inflate. Handles stored and deflated entries (no zip64/encryption). */
 export class Zip {
   private entries = new Map<string, { method: number; csize: number; offset: number }>();
   constructor(private buf: Buffer) {
+    if (buf.length < 22) throw new Error("Not a valid ZIP/Office file.");
     let eocd = -1;
     for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 65535); i--) {
       if (buf.readUInt32LE(i) === 0x06054b50) {
@@ -20,13 +22,14 @@ export class Zip {
     const count = buf.readUInt16LE(eocd + 10);
     let p = buf.readUInt32LE(eocd + 16);
     for (let i = 0; i < count; i++) {
-      if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error("Corrupt ZIP directory.");
+      if (p + 46 > buf.length || buf.readUInt32LE(p) !== 0x02014b50) throw new Error("Corrupt ZIP directory.");
       const method = buf.readUInt16LE(p + 10);
       const csize = buf.readUInt32LE(p + 20);
       const nlen = buf.readUInt16LE(p + 28);
       const elen = buf.readUInt16LE(p + 30);
       const clen = buf.readUInt16LE(p + 32);
       const offset = buf.readUInt32LE(p + 42);
+      if (p + 46 + nlen > buf.length) throw new Error("Corrupt ZIP filename header.");
       this.entries.set(buf.toString("utf8", p + 46, p + 46 + nlen), { method, csize, offset });
       p += 46 + nlen + elen + clen;
     }
@@ -40,9 +43,11 @@ export class Zip {
   read(name: string): string {
     const e = this.entries.get(name);
     if (!e) throw new Error(`Missing ${name}`);
+    if (e.offset + 30 > this.buf.length) throw new Error(`Corrupt entry header for ${name}`);
     const nlen = this.buf.readUInt16LE(e.offset + 26);
     const elen = this.buf.readUInt16LE(e.offset + 28);
     const start = e.offset + 30 + nlen + elen;
+    if (start + e.csize > this.buf.length) throw new Error(`Truncated or corrupt entry data for ${name}`);
     const raw = this.buf.subarray(start, start + e.csize);
     if (e.method === 0) return raw.toString("utf8");
     if (e.method === 8) return zlib.inflateRawSync(raw, { maxOutputLength: MAX_ENTRY }).toString("utf8");
@@ -66,7 +71,10 @@ export function readDocx(z: Zip): string {
 
 const colIndex = (ref: string): number => {
   let n = 0;
-  for (const ch of ref.replace(/[^A-Za-z]/g, "").toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64);
+  for (const ch of ref.replace(/[^A-Za-z]/g, "").toUpperCase()) {
+    n = n * 26 + (ch.charCodeAt(0) - 64);
+    if (n > MAX_COLS) return -1; // invalid or extreme column coordinate
+  }
   return n - 1;
 };
 
@@ -93,9 +101,10 @@ export function readXlsx(z: Zip): string {
             val = type === "s" ? (shared[idx] ?? decodeEntities(v)) : decodeEntities(v);
           } else if (/<t[\s>]/.test(body)) val = texts(body, "t").join("");
           // place by column so empty cells keep later columns aligned
-          const at = ref ? colIndex(ref) : vals.length;
-          while (vals.length < at) vals.push("");
-          vals[at] = val;
+          const cIdx = ref ? colIndex(ref) : vals.length;
+          const at = cIdx >= 0 && cIdx < MAX_COLS ? cIdx : vals.length;
+          while (vals.length < at && vals.length < MAX_COLS) vals.push("");
+          if (at < MAX_COLS) vals[at] = val;
         }
         if (vals.some((x) => x.trim())) rows.push(vals.join(" | "));
       }

@@ -61,7 +61,20 @@ export function createHttpServer(ctx, apiKey, limiter = new RateLimiter()) {
                     "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(entry.fileName)}`,
                     "content-length": String(entry.fileSize),
                 });
-                fs.createReadStream(entry.filePath).pipe(res);
+                const stream = fs.createReadStream(entry.filePath);
+                stream.on("error", (err) => {
+                    if (!res.headersSent) {
+                        res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+                        res.end("Error reading file stream.");
+                    }
+                    else {
+                        res.destroy(err);
+                    }
+                });
+                res.on("close", () => {
+                    stream.destroy();
+                });
+                stream.pipe(res);
                 return;
             }
             if (await auth.handle(req, res))

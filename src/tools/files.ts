@@ -214,7 +214,10 @@ export function registerFileTools(mcp: McpServer, ctx: Ctx): void {
               /* unreadable entry */
             }
           }
-          if (recursive && ent.isDirectory() && !ent.isSymbolicLink()) stack.push(full);
+          if (recursive && ent.isDirectory() && !ent.isSymbolicLink()) {
+            const allowHidden = pattern.startsWith(".") || pattern.includes(".git");
+            if (allowHidden || (!SKIP_DIRS.has(ent.name) && !ent.name.startsWith("."))) stack.push(full);
+          }
         }
       }
       audit("list_files", "ALLOW", `${root} (pattern=${pattern}, recursive=${recursive}, count=${items.length})`);
@@ -278,7 +281,15 @@ export function registerFileTools(mcp: McpServer, ctx: Ctx): void {
           try {
             if (fs.statSync(full).size > cfg.maxReadBytes) continue;
             if (!isSearchable(ctx, full)) continue;
-            const content = fs.readFileSync(full).toString("utf8");
+            const buf = fs.readFileSync(full);
+            // Quick check: if the first 4KB contains a null byte, treat as binary and skip full string decoding
+            const headLen = Math.min(buf.length, 4096);
+            let isBinary = false;
+            for (let b = 0; b < headLen; b++) {
+              if (buf[b] === 0) { isBinary = true; break; }
+            }
+            if (isBinary) continue;
+            const content = buf.toString("utf8");
             if (content.includes("\0")) continue;
             const lines = splitLines(content);
             for (let i = 0; i < lines.length; i++) {

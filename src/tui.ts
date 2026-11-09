@@ -50,7 +50,16 @@ export function select<T>(title: string, items: Item<T>[], io: IO = stdio()): Pr
   };
 
   return new Promise((resolve) => {
+    const cleanup = () => {
+      try {
+        input.setRawMode?.(false);
+        output.write("\x1b[?25h");
+      } catch {}
+    };
+    process.once("exit", cleanup);
+
     const done = (v: T | undefined) => {
+      process.off("exit", cleanup);
       input.off("keypress", onKey);
       input.setRawMode?.(false);
       if (drawn) output.write(`\x1b[${drawn}A\x1b[0J`);

@@ -66,6 +66,7 @@ function validateUrl(raw: string): URL {
 
 function once(u: URL, headers: Record<string, string>, maxBytes: number, timeoutMs: number): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
   return new Promise((resolve, reject) => {
+    let settled = false;
     const mod = u.protocol === "https:" ? https : http;
     const req = mod.request(u, { method: "GET", headers, lookup: safeLookup, timeout: timeoutMs }, (res) => {
       const chunks: Buffer[] = [];
@@ -79,13 +80,38 @@ function once(u: URL, headers: Record<string, string>, maxBytes: number, timeout
         }
         chunks.push(c);
       });
-      const done = () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) });
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) });
+      };
       res.on("end", done);
       res.on("close", done);
       res.on("error", () => done());
     });
-    req.on("timeout", () => req.destroy(new Error("timed out")));
-    req.on("error", reject);
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        req.destroy(new Error("timed out"));
+        reject(new Error("timed out"));
+      }
+    }, timeoutMs);
+    req.on("timeout", () => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        req.destroy(new Error("timed out"));
+        reject(new Error("timed out"));
+      }
+    });
+    req.on("error", (err) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      }
+    });
     req.end();
   });
 }

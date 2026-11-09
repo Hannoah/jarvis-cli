@@ -174,6 +174,8 @@ foreach ($n in $all) {
 $out | ConvertTo-Json -Depth 12 -Compress
 `;
 
+const ENCODED_PS_DUMP = Buffer.from(PS_DUMP, "utf16le").toString("base64");
+
 /** Windows ships PowerShell 5.1; macOS/Linux need `pwsh` installed. */
 export const psExecutable = () => (process.platform === "win32" ? "powershell" : "pwsh");
 
@@ -197,11 +199,10 @@ function normalizeParsed(raw: any): Parsed {
 export function parsePowerShell(command: string, timeoutMs = 20000): Promise<Parsed> {
   const hit = cache.get(command);
   if (hit) return Promise.resolve(hit);
-  const encoded = Buffer.from(PS_DUMP, "utf16le").toString("base64");
   return new Promise((resolve, reject) => {
     execFile(
       psExecutable(),
-      ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+      ["-NoProfile", "-NonInteractive", "-EncodedCommand", ENCODED_PS_DUMP],
       { env: { ...process.env, PCMCP_CMD: command }, timeout: timeoutMs, windowsHide: true, maxBuffer: 8 * 1024 * 1024, encoding: "utf8" },
       (err, stdout, stderr) => {
         if (err && (err as NodeJS.ErrnoException).code === "ENOENT") {

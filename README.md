@@ -81,7 +81,7 @@ Upon installation, `jarvis about` prints the installed version and a quick intro
 
 * To update: `jarvis update` (or re-run the install command).
 * To uninstall: `npm uninstall -g jarvis-cli`.
-* To install a specific version: replace `main.tar.gz` with a release tag, e.g. `refs/tags/v0.11.0.tar.gz`.
+* To install a specific version: replace `main.tar.gz` with a release tag, e.g. `refs/tags/v0.11.1.tar.gz`.
 
 > Do not use `npm install -g github:Hannoah/jarvis-cli`. On npm 11, global installations from GitHub shorthand link to a temporary clone folder, breaking execution.
 

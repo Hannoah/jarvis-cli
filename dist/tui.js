@@ -43,7 +43,16 @@ export function select(title, items, io = stdio()) {
         drawn = lines.length;
     };
     return new Promise((resolve) => {
+        const cleanup = () => {
+            try {
+                input.setRawMode?.(false);
+                output.write("\x1b[?25h");
+            }
+            catch { }
+        };
+        process.once("exit", cleanup);
         const done = (v) => {
+            process.off("exit", cleanup);
             input.off("keypress", onKey);
             input.setRawMode?.(false);
             if (drawn)
