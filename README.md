@@ -39,8 +39,8 @@ Jarvis's single biggest advantage is that **by connecting it as an MCP (Model Co
     - *"Find the latest Q4 financial report spreadsheet in my Documents folder and summarize top 3 takeaways."*
     - *"Run the integration test suite on my work PC, fix any broken imports, and show me the git diff."*
     - *"Start downloading the dataset in the background and notify me when it finishes."*
-- **40 Production-Ready Local Tools**:
-  - Beyond basic file operations, Jarvis includes PowerShell terminal execution, background process management, Office document text extraction (Word `.docx`, Excel `.xlsx`, PowerPoint `.pptx`, PDF), Git version control, AST code symbols extraction, long-term wiki memory, and enterprise cloud CLIs (`kubectl`, `az`, `pac`, `sas-viya`).
+- **42 Production-Ready Local Tools**:
+  - Beyond basic file operations, Jarvis includes PowerShell terminal execution, background process management, Office document text extraction (Word `.docx`, Excel `.xlsx`, PowerPoint `.pptx`, PDF), Git version control, AST code symbols extraction, long-term wiki memory, GlobalProtect VPN diagnostics/keep-alive, and enterprise cloud CLIs (`kubectl`, `az`, `pac`, `sas-viya`).
 - **Ironclad Safety & Sandboxing**:
   - AI can never wander freely across your operating system.
   - **Approved Folders Sandbox**: Strict directory boundaries prevent access outside approved locations.
@@ -81,7 +81,7 @@ Upon installation, `jarvis about` prints the installed version and a quick intro
 
 * To update: `jarvis update` (or re-run the install command).
 * To uninstall: `npm uninstall -g jarvis-cli`.
-* To install a specific version: replace `main.tar.gz` with a release tag, e.g. `refs/tags/v0.12.2.tar.gz`.
+* To install a specific version: replace `main.tar.gz` with a release tag, e.g. `refs/tags/v0.12.3.tar.gz`.
 
 > Do not use `npm install -g github:Hannoah/jarvis-cli`. On npm 11, global installations from GitHub shorthand link to a temporary clone folder, breaking execution.
 

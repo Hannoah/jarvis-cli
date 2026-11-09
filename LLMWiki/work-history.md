@@ -146,4 +146,11 @@
 |---|---|---|
 | "/goal 현재 프로젝트 정밀리뷰", "발견한 문제점 당장 해결하자" | ① **내부 AKS 도메인 하드코딩 제거 (P0 보안 조치)**: `src/tools/vpn.ts` 내 하드코딩된 사내 AKS FQDN을 완전히 제거하고, `~/.kube/config` 또는 `JARVIS_VPN_TARGET_HOST` 환경변수 또는 사용자 입력 `target_host`를 필수로 사용하도록 방어. `LLMWiki/work-history.md` 내 노출 정보도 전수 마스킹. ② **OAuth 2.0 PKCE 필수화 (P1 보안 조치)**: `src/security/auth.ts`에서 authorization code 발급 후 토큰 교환 시 `codeChallenge`가 없던 요청은 반드시 마스터 API 키(`client_secret`) 검증을 통과하도록 강제하여 인가 코드 가로채기 방어. `test/security.test.ts`에 검증 테스트 추가. ③ **작업 스케줄러 동기 블로킹 해소 (P1 안정성 조치)**: `src/system/scheduler.ts`의 `listTasks()`를 비동기(`execFile`)로 전환하여 엔터프라이즈 Windows 환경에서 `schtasks /Query` 수행 중 메인 이벤트 루프 프리징 방지. `src/tools/dev.ts` 연동 비동기화. ④ **Office 문서 추출 OOM 방어 및 조기 종료 (P2 성능 최적화)**: `src/files/docs.ts`의 `readDocx`, `readXlsx`, `readPptx`에 `maxChars` 인자를 전달하여 파싱 루프 중간에 요청 글자 수 한도 도달 시 즉시 순회를 중단하도록 최적화. ⑤ **터미널 테이블 CJK 한글 줄맞춤 보정 (P2 UX 개선)**: `src/cliutil.ts`에 전각/한글 2컬럼 폭 계산 함수(`stringWidth`)를 도입하고 `table()` 함수에서 이를 반영하여 한글/영문 혼용 시 열 밀림 현상 완전 해결. | ① **비동기 호환성**: `listTasks()`의 비동기 전환 시 MCP 핸들러(`dev.ts`)가 이미 async 함수이므로 `await listTasks()`로 간단히 전환 완료. ② **테스트 및 빌드 전수 검증**: `npm run typecheck`, `npm test` 50개 테스트 전원 통과, `npm run build`로 `dist/` 최신화 완료. |
 
+## v0.12.3 — 구버전 `jarvis-ts` 폐기 및 `jarvis-cli` 단일 프로젝트 일원화
+
+| 요청 | 한 일 | 함정/결정 |
+|---|---|---|
+| "이 프로젝트랑 jarvis-ts 이거 두 개 하나로 합칠 수 있는 한 소스로 인터페이스만 두 개로 하는 거지 보다 진보한 골격을 가져다 쓰는 게 맞을 것 같아", "Jarvis.cmd / Jarvis.command 이건 필요 없어 어차피 CLI 실행할 꺼라 나머지는 가져다 써도 될 것 같고, ts 버리자 그럼 깔끔하게" | ① **핵심 자산 이관 및 현행화**: `jarvis-ts`에 남아 있던 `docs/agent-system-prompt.md`(v0.12.3 42개 도구 기준으로 업데이트), `custom_tools/sample_calculator.mjs` 플러그인 샘플, `assets/jarvis.svg` 아이콘, `.github/workflows/ci.yml`(Windows/macOS/Linux × Node 22/24 매트릭스 CI)을 `jarvis-cli`로 통합. ② **백업 데이터 보존**: `jarvis-ts/data/.backups/*.bak` 스냅샷을 `~/.jarvis/.backups/`로 안전하게 복사. ③ **구버전 `jarvis-ts` 디렉터리 완전 제거**: 포트(8765/8766) 및 설정 폴더 이원화 혼선을 원천 차단하기 위해 로컬 `jarvis-ts` 폴더 삭제 완료. | 이미 `jarvis-cli`가 MCP 서버/대시보드와 대화형 CLI 두 인터페이스를 모두 내장한 상위 호환 아키텍처이며, PC 백그라운드 서비스 역시 `jarvis-cli`로 구동 중임을 확인. 불필요한 더블클릭 배치 스크립트(`Jarvis.cmd`/`Jarvis.command`)는 제외하고 CLI 중심 단일 소스로 정리 완료. |
+
+
 

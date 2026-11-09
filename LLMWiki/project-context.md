@@ -7,11 +7,12 @@ jarvis-cli는 같은 도구를 두 가지로 쓰게 만든 공개 CLI다.
 1. **터미널에서 직접 실행** — `jarvis read_file notes.txt`, 대화형 입력창(`jarvis`), 서버 없이.
 2. **로컬 MCP 서버** — `jarvis start -d`로 jarvis-ts와 같은 서버·터널·대시보드를 띄우고 `stop/restart/status/tunnel/mcp`로 제어.
 
-## jarvis-ts와의 관계
-- jarvis-ts는 **비공개 저장소**이고 LICENSE가 없다. jarvis-cli는 그 코드를 복사해 와서 **사용자가 MIT로 공개하는 것에 동의**하고 만들었다(2026-11-06 확인). 원본 쪽 공개 권한은 사용자가 따로 확인하기로 했다.
-- **두 프로그램은 같은 포트(MCP 8765, 대시보드 8766)를 쓴다.** 동시에 실행할 수 없다.
-- jarvis-cli의 기본 설정 폴더는 `~/.jarvis`다. jarvis-ts의 설정(API 키·OAuth 토큰·터널 ID)은 jarvis-ts의 `data` 폴더에 있다. **이어서 쓰려면 `JARVIS_HOME`을 그 폴더로 지정**한다. 자동 복사는 하지 않는다. 지정하면 jarvis-cli로 실행 중인 jarvis-ts 인스턴스를 `status/mcp/restart/tunnel`로 제어할 수 있다(`stop`은 아래 참고).
-- 맨 `jarvis`(인자 없음)의 의미가 다르다. jarvis-ts는 서버를 시작하지만 jarvis-cli는 **인터랙티브 입력창**을 연다(사용자 요청). 서버는 `jarvis start`.
+## jarvis-ts와의 관계 (단일화 완료 — 2026-11-09)
+- 초기에는 `jarvis-ts`(v0.3.2) 코드를 복사해 와서 시작했으나, 이후 모든 기능 확장(42개 도구, VPN, 파일 공유, 터널 자가 치유, 보안 패치 등)과 CLI/대시보드 인터페이스가 `jarvis-cli`에서 이루어졌다.
+- **2026-11-09부로 구버전 `jarvis-ts` 로컬 폴더를 완전히 폐기하고 `jarvis-cli` 단일 프로젝트로 일원화**했다.
+- `jarvis-ts`에 남아 있던 유용한 자산(`docs/agent-system-prompt.md`, `assets/jarvis.svg`, `custom_tools/sample_calculator.mjs`, `.github/workflows/ci.yml`)과 백업 파일(`.backups/*.bak`)은 모두 `jarvis-cli` 및 `~/.jarvis`로 이관 완료했다.
+- 기본 설정 폴더는 `~/.jarvis`다 (`JARVIS_HOME`으로 변경 가능).
+- 맨 `jarvis`(인자 없음)는 **인터랙티브 입력창**을 열고, 서버는 `jarvis start`(또는 백그라운드 `jarvis start -d`)로 실행한다.
 
 ## 복사한 코드 중 우리가 고친 곳 (다시 복사할 때 유지할 것)
 | 파일 | 원본과 다른 점 |
