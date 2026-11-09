@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)
 
-**40 sandboxed PC tools (files, terminal, Git, web, wiki, cloud CLIs) for your PC — accessible locally from your terminal or remotely through any AI client via MCP.**
+**42 sandboxed PC tools (files, terminal, Git, web, wiki, VPN keep-alive, cloud CLIs) for your PC — accessible locally from your terminal or remotely through any AI client via MCP.**
 
 ![Jarvis Terminal UI](assets/terminal-demo.png)
 
@@ -58,7 +58,7 @@ Jarvis's single biggest advantage is that **by connecting it as an MCP (Model Co
 
 ## Features
 
-- **40 Sandboxed Tools** — File read/write/edit/search/share, PowerShell terminal execution, background job management, Git, code symbols, web search/fetch, Word/Excel/PowerPoint/PDF document extraction, wiki memory, task scheduler, kubectl, Azure CLI, Power Platform CLI.
+- **42 Sandboxed Tools** — File read/write/edit/search/share, PowerShell terminal execution, background job management, Git, code symbols, web search/fetch, Word/Excel/PowerPoint/PDF document extraction, wiki memory, task scheduler, GlobalProtect VPN status/keep-alive, kubectl, Azure CLI, Power Platform CLI.
 - **Built-in Safety Guardrails** — Approved folder sandbox, terminal command allowlist, automatic edit backups (`undo_last_edit`), full audit logging (`audit.log`), secret file masking.
 - **Clean, Script-Friendly Output** — Unadorned content for files, formatted tables for listings, separated stdout/stderr for commands, ANSI colors. Automatically outputs raw text when piped.
 - **Interactive TUI Prompt** — Type `jarvis` to launch a full terminal UI featuring a `/` slash-command menu, step-by-step parameter forms (`/tools`), live autocomplete suggestions, and gradient themes.
@@ -81,7 +81,7 @@ Upon installation, `jarvis about` prints the installed version and a quick intro
 
 * To update: `jarvis update` (or re-run the install command).
 * To uninstall: `npm uninstall -g jarvis-cli`.
-* To install a specific version: replace `main.tar.gz` with a release tag, e.g. `refs/tags/v0.11.1.tar.gz`.
+* To install a specific version: replace `main.tar.gz` with a release tag, e.g. `refs/tags/v0.12.0.tar.gz`.
 
 > Do not use `npm install -g github:Hannoah/jarvis-cli`. On npm 11, global installations from GitHub shorthand link to a temporary clone folder, breaking execution.
 
